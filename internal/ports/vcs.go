@@ -22,6 +22,19 @@ type CommitSpec struct {
 	Trailers []Trailer
 }
 
+// PullRequest is a request to merge Head into Base, to be reviewed by a human.
+type PullRequest struct {
+	// Repo is "owner/name".
+	Repo string
+	// Title and Body may contain text from scanner and model output; the
+	// builder is responsible for making them safe to render.
+	Title, Body string
+	// Head is the fix branch and Base the branch the failing commit was on.
+	Head, Base string
+	// Labels are label names; the adapter creates the ones that do not exist.
+	Labels []string
+}
+
 // Workspace is a throwaway checkout of one commit. It must be closed, which
 // deletes it from disk.
 type Workspace interface {
@@ -35,6 +48,13 @@ type Workspace interface {
 	// returns the commit id. It fails, leaving nothing committed, when the diff
 	// does not apply or changes any path other than spec.File.
 	CommitPatch(ctx context.Context, spec CommitSpec) (commitSHA string, err error)
+	// Push publishes the branch. It never forces: a remote branch that already
+	// holds other commits makes it fail.
+	Push(ctx context.Context, branch string) error
+	// DeleteRemoteBranch removes a branch from the remote. It is used to undo a
+	// push whose pull request could not be opened. Deleting a branch that is
+	// already gone is not guaranteed to succeed, so callers should not rely on it.
+	DeleteRemoteBranch(ctx context.Context, branch string) error
 	// Close deletes the checkout. It is safe to call more than once.
 	Close() error
 }
@@ -43,4 +63,10 @@ type Workspace interface {
 type VCS interface {
 	// Checkout shallow-fetches exactly one commit into a fresh workspace.
 	Checkout(ctx context.Context, cloneURL, sha string) (Workspace, error)
+	// OpenPullRequest opens a pull request and returns its URL. Nothing here
+	// merges, approves or enables auto-merge: a human always decides.
+	OpenPullRequest(ctx context.Context, pr PullRequest) (url string, err error)
+	// CountOpenAutoFixPRs counts the open pull requests of repo ("owner/name")
+	// whose branch was created by healerd.
+	CountOpenAutoFixPRs(ctx context.Context, repo string) (int, error)
 }

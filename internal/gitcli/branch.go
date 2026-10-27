@@ -101,3 +101,23 @@ func Commit(ctx context.Context, dir, message string, o Options) (string, error)
 	}
 	return sha, nil
 }
+
+// Push publishes the local branch to origin under the same name. It never
+// forces: a remote branch that already has other commits makes the push fail.
+func Push(ctx context.Context, dir, branch string, o Options) error {
+	if err := checkBranch(branch); err != nil {
+		return err
+	}
+	ref := "refs/heads/" + branch
+	_, err := run(ctx, dir, nil, o, "push", "-q", "origin", ref+":"+ref)
+	return err
+}
+
+// DeleteRemoteBranch removes the branch from origin.
+func DeleteRemoteBranch(ctx context.Context, dir, branch string, o Options) error {
+	if err := checkBranch(branch); err != nil {
+		return err
+	}
+	_, err := run(ctx, dir, nil, o, "push", "-q", "origin", ":refs/heads/"+branch)
+	return err
+}

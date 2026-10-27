@@ -26,6 +26,22 @@ func (w *workspace) BranchExists(ctx context.Context, branch string) (bool, erro
 	return ok, nil
 }
 
+// Push publishes the fix branch to the remote, without forcing.
+func (w *workspace) Push(ctx context.Context, branch string) error {
+	if err := gitcli.Push(ctx, w.dir, branch, w.opts); err != nil {
+		return fmt.Errorf("gitea: push failed: %w", err)
+	}
+	return nil
+}
+
+// DeleteRemoteBranch removes a branch from the remote.
+func (w *workspace) DeleteRemoteBranch(ctx context.Context, branch string) error {
+	if err := gitcli.DeleteRemoteBranch(ctx, w.dir, branch, w.opts); err != nil {
+		return fmt.Errorf("gitea: deleting the remote branch failed: %w", err)
+	}
+	return nil
+}
+
 // CommitPatch creates spec.Branch at the checked-out commit, applies the diff
 // and commits it. The diff must change exactly spec.File: that is checked on
 // what git actually staged, not on what the diff claims. On any failure the

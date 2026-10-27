@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -25,6 +26,8 @@ type Config struct {
 	Allow config.Allowlist
 	// AuthorName and AuthorEmail identify the author and committer of fix commits.
 	AuthorName, AuthorEmail string
+	// HTTP performs the API requests; use safehttp.NewClient so the allowlist applies.
+	HTTP *http.Client
 	// WorkRoot is the directory workspaces are created in; os.TempDir() when empty.
 	WorkRoot string
 }
@@ -36,7 +39,8 @@ type Adapter struct {
 	allow     config.Allowlist
 	workRoot  string
 	author    [2]string // name, email
-	protocols string    // git transports; DefaultProtocols unless a test overrides it
+	http      *http.Client
+	protocols string // git transports; DefaultProtocols unless a test overrides it
 }
 
 var _ ports.VCS = (*Adapter)(nil)
@@ -56,6 +60,9 @@ func New(cfg Config) (*Adapter, error) {
 	if !cfg.Allow.Allows(base.Hostname()) {
 		return nil, errors.New("gitea: the Gitea host is not permitted by the allowlist")
 	}
+	if cfg.HTTP == nil {
+		return nil, errors.New("gitea: HTTP client is required")
+	}
 	if cfg.AuthorName == "" || cfg.AuthorEmail == "" {
 		return nil, errors.New("gitea: AuthorName and AuthorEmail are required")
 	}
@@ -63,7 +70,7 @@ func New(cfg Config) (*Adapter, error) {
 	if root == "" {
 		root = os.TempDir()
 	}
-	return &Adapter{base: base, token: cfg.Token, allow: cfg.Allow, workRoot: root, author: [2]string{cfg.AuthorName, cfg.AuthorEmail}}, nil
+	return &Adapter{base: base, token: cfg.Token, allow: cfg.Allow, workRoot: root, author: [2]string{cfg.AuthorName, cfg.AuthorEmail}, http: cfg.HTTP}, nil
 }
 
 // checkCloneURL accepts only a plain http(s) URL on the configured Gitea host.

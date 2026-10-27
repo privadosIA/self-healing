@@ -14,8 +14,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/privadosIA/self-healing/internal/config"
+	"github.com/privadosIA/self-healing/internal/safehttp"
 )
 
 const testToken = "changeme-bot-token"
@@ -98,6 +100,7 @@ func serveRepo(t *testing.T, files map[string]string, symlinks map[string]string
 	}
 	git(t, work, "clone", "-q", "--bare", work, bare)
 	git(t, bare, "config", "uploadpack.allowAnySHA1InWant", "true")
+	git(t, bare, "config", "http.receivepack", "true")
 
 	repo := &fixtureRepo{sha: sha, bare: bare}
 	backendHandler := &cgi.Handler{
@@ -131,7 +134,7 @@ func newAdapter(t *testing.T, baseURL, token string, workRoot string) *Adapter {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := New(Config{BaseURL: baseURL, Token: token, Allow: al, WorkRoot: workRoot, AuthorName: "ci-healer-bot", AuthorEmail: "bot@example.com"})
+	a, err := New(Config{BaseURL: baseURL, Token: token, Allow: al, WorkRoot: workRoot, AuthorName: "ci-healer-bot", AuthorEmail: "bot@example.com", HTTP: safehttp.NewClient(al, 5*time.Second)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +299,7 @@ func TestCloneURLValidation(t *testing.T) {
 
 func TestCloneURLComparisonIgnoresCaseAndDefaultPorts(t *testing.T) {
 	al, _ := config.ParseAllowlist("example.com")
-	a, err := New(Config{BaseURL: "https://Gitea.Example.com", Token: testToken, Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"})
+	a, err := New(Config{BaseURL: "https://Gitea.Example.com", Token: testToken, Allow: al, AuthorName: "b", AuthorEmail: "b@example.com", HTTP: http.DefaultClient})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,14 +403,15 @@ func TestReadFileSafety(t *testing.T) {
 func TestNewRejectsBadConfig(t *testing.T) {
 	al, _ := config.ParseAllowlist("example.com")
 	tests := map[string]Config{
-		"not a url":              {BaseURL: "gitea", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
-		"bad scheme":             {BaseURL: "ssh://gitea.example.com", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
-		"credentials":            {BaseURL: "https://u:p@gitea.example.com", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
-		"no token":               {BaseURL: "https://gitea.example.com", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
-		"host outside allowlist": {BaseURL: "https://gitea.other.test", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
-		"empty allowlist":        {BaseURL: "https://gitea.example.com", Token: "t", AuthorName: "b", AuthorEmail: "b@example.com"},
-		"no author name":         {BaseURL: "https://gitea.example.com", Token: "t", Allow: al, AuthorEmail: "b@example.com"},
-		"no author email":        {BaseURL: "https://gitea.example.com", Token: "t", Allow: al, AuthorName: "b"},
+		"not a url":              {BaseURL: "gitea", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com", HTTP: http.DefaultClient},
+		"bad scheme":             {BaseURL: "ssh://gitea.example.com", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com", HTTP: http.DefaultClient},
+		"credentials":            {BaseURL: "https://u:p@gitea.example.com", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com", HTTP: http.DefaultClient},
+		"no token":               {BaseURL: "https://gitea.example.com", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com", HTTP: http.DefaultClient},
+		"host outside allowlist": {BaseURL: "https://gitea.other.test", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com", HTTP: http.DefaultClient},
+		"empty allowlist":        {BaseURL: "https://gitea.example.com", Token: "t", AuthorName: "b", AuthorEmail: "b@example.com", HTTP: http.DefaultClient},
+		"no author name":         {BaseURL: "https://gitea.example.com", Token: "t", Allow: al, AuthorEmail: "b@example.com", HTTP: http.DefaultClient},
+		"no author email":        {BaseURL: "https://gitea.example.com", Token: "t", Allow: al, AuthorName: "b", HTTP: http.DefaultClient},
+		"no http client":         {BaseURL: "https://gitea.example.com", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
 	}
 	for name, cfg := range tests {
 		if _, err := New(cfg); err == nil {
