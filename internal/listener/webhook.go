@@ -31,8 +31,8 @@ func (e errIgnored) Error() string { return string(e) }
 // by RequireSignature: it does no authentication itself.
 //
 // Responses: 202 job queued, 200 duplicate delivery, 204 event ignored,
-// 400 malformed payload, 405 wrong method, 500 store failure.
-func NewWebhookHandler(store ports.JobStore, log *slog.Logger) http.Handler {
+// 400 malformed payload, 405 wrong method, 500 store failure. m may be nil.
+func NewWebhookHandler(store ports.JobStore, log *slog.Logger, m *Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -41,6 +41,7 @@ func NewWebhookHandler(store ports.JobStore, log *slog.Logger) http.Handler {
 		}
 		delivery := r.Header.Get(deliveryHeader)
 		if delivery == "" {
+			m.webhook(resultMalformed)
 			http.Error(w, "missing "+deliveryHeader, http.StatusBadRequest)
 			return
 		}
@@ -49,10 +50,12 @@ func NewWebhookHandler(store ports.JobStore, log *slog.Logger) http.Handler {
 		var ignored errIgnored
 		switch {
 		case errors.As(err, &ignored):
+			m.webhook(resultIgnored)
 			log.Info("event ignored", "delivery_id", delivery, "reason", string(ignored))
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case err != nil:
+			m.webhook(resultMalformed)
 			log.Warn("malformed webhook", "delivery_id", delivery, "reason", err.Error())
 			http.Error(w, "malformed payload", http.StatusBadRequest)
 			return
@@ -61,15 +64,18 @@ func NewWebhookHandler(store ports.JobStore, log *slog.Logger) http.Handler {
 
 		created, err := store.Enqueue(r.Context(), ev)
 		if err != nil {
+			m.webhook(resultError)
 			log.Error("cannot enqueue job", "delivery_id", delivery, "error", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 		if !created {
+			m.webhook(resultDuplicate)
 			log.Info("duplicate delivery", "delivery_id", delivery)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		m.webhook(resultQueued)
 		log.Info("job queued", "delivery_id", delivery, "repo", ev.RepoFullName, "branch", ev.Branch)
 		w.WriteHeader(http.StatusAccepted)
 	})

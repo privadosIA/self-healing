@@ -104,7 +104,7 @@ func TestWebhookHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newFakeStore()
 			store.err = tt.storeErr
-			rec := post(NewWebhookHandler(store, discardLogger()), tt.req)
+			rec := post(NewWebhookHandler(store, discardLogger(), nil), tt.req)
 			if rec.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
 			}
@@ -152,7 +152,7 @@ func TestWebhookNormalization(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newFakeStore()
-			rec := post(NewWebhookHandler(store, discardLogger()), request{event: tt.event, delivery: "delivery-1", body: tt.body})
+			rec := post(NewWebhookHandler(store, discardLogger(), nil), request{event: tt.event, delivery: "delivery-1", body: tt.body})
 			if rec.Code != http.StatusAccepted || len(store.events) != 1 {
 				t.Fatalf("status %d, events %d", rec.Code, len(store.events))
 			}
@@ -165,7 +165,7 @@ func TestWebhookNormalization(t *testing.T) {
 
 func TestWebhookDuplicateDelivery(t *testing.T) {
 	store := newFakeStore()
-	h := NewWebhookHandler(store, discardLogger())
+	h := NewWebhookHandler(store, discardLogger(), nil)
 	req := request{event: "workflow_job", delivery: "same", body: fixture(t, "workflow_job_failure.json")}
 
 	if rec := post(h, req); rec.Code != http.StatusAccepted {
@@ -193,7 +193,7 @@ func TestWebhookBehindSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := mw(NewWebhookHandler(store, discardLogger()))
+	h := mw(NewWebhookHandler(store, discardLogger(), nil))
 
 	send := func(sig string) int {
 		req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
