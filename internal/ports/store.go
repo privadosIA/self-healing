@@ -34,6 +34,11 @@ type JobStore interface {
 	Start(ctx context.Context, deliveryID string) error
 	// Finish moves a running job to the terminal state in res.
 	Finish(ctx context.Context, deliveryID string, res model.JobResult) error
+	// FailInterrupted marks every running job as failed and returns how many
+	// there were. Call it once at startup: a job still running then was cut
+	// short by a crash, and it may or may not have opened a pull request.
+	// Queued jobs are left untouched so a worker can pick them up.
+	FailInterrupted(ctx context.Context) (int, error)
 }
 
 // Clock abstracts time so tests are deterministic.

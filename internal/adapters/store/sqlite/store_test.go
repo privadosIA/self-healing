@@ -258,3 +258,154 @@ func TestOpenFailsOnUnwritablePath(t *testing.T) {
 		t.Error("expected an error for a path in a missing directory")
 	}
 }
+
+func TestDuplicateDeliveryIsIgnored(t *testing.T) {
+	ctx := context.Background()
+	clock := newClock()
+	s, _ := openTemp(t, clock)
+
+	first := sampleEvent("d1")
+	if created, err := s.Enqueue(ctx, first); err != nil || !created {
+		t.Fatalf("first Enqueue = %v, %v", created, err)
+	}
+	before, _ := s.Get(ctx, "d1")
+
+	// Same delivery later and with different content: nothing may change.
+	clock.advance(time.Hour)
+	second := sampleEvent("d1")
+	second.CommitSHA, second.Branch = "fedcba9876543210fedcba9876543210fedcba98", "other"
+	created, err := s.Enqueue(ctx, second)
+	if err != nil || created {
+		t.Fatalf("duplicate Enqueue = %v, %v; want false, nil", created, err)
+	}
+	after, _ := s.Get(ctx, "d1")
+	if after != before {
+		t.Errorf("duplicate modified the original job:\nbefore %+v\nafter  %+v", before, after)
+	}
+
+	// A duplicate of a job that already progressed must not reset it.
+	_ = s.Start(ctx, "d1")
+	if created, _ := s.Enqueue(ctx, first); created {
+		t.Error("duplicate of a running job was created")
+	}
+	if got, _ := s.Get(ctx, "d1"); got.Status != model.JobRunning {
+		t.Errorf("status = %s, want running", got.Status)
+	}
+
+	var n int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM jobs").Scan(&n); err != nil || n != 1 {
+		t.Errorf("rows = %d, %v; want 1", n, err)
+	}
+}
+
+func TestConcurrentDuplicatesCreateOneJob(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTemp(t, newClock())
+
+	const workers = 20
+	results := make(chan bool, workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			created, err := s.Enqueue(ctx, sampleEvent("same"))
+			if err != nil {
+				t.Error(err)
+			}
+			results <- created
+		}()
+	}
+	created := 0
+	for i := 0; i < workers; i++ {
+		if <-results {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Errorf("%d goroutines created the job, want exactly 1", created)
+	}
+}
+
+func TestFailInterrupted(t *testing.T) {
+	ctx := context.Background()
+	clock := newClock()
+	s, _ := openTemp(t, clock)
+
+	// queued, running and finished jobs of different deliveries.
+	for _, d := range []string{"queued", "running-1", "running-2", "done"} {
+		if _, err := s.Enqueue(ctx, sampleEvent(d)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []string{"running-1", "running-2", "done"} {
+		if err := s.Start(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prURL := "https://gitea.example.com/acme/widget/pulls/7"
+	if err := s.Finish(ctx, "done", model.JobResult{Status: model.JobPROpened, PRURL: prURL}); err != nil {
+		t.Fatal(err)
+	}
+
+	clock.advance(time.Minute)
+	n, err := s.FailInterrupted(ctx)
+	if err != nil || n != 2 {
+		t.Fatalf("FailInterrupted = %d, %v; want 2, nil", n, err)
+	}
+
+	for _, d := range []string{"running-1", "running-2"} {
+		got, _ := s.Get(ctx, d)
+		if got.Status != model.JobFailed || got.Error != interruptedMessage || !got.UpdatedAt.Equal(clock.t) {
+			t.Errorf("%s not recovered: %+v", d, got)
+		}
+	}
+	if got, _ := s.Get(ctx, "queued"); got.Status != model.JobQueued || got.Error != "" {
+		t.Errorf("queued job was touched: %+v", got)
+	}
+	if got, _ := s.Get(ctx, "done"); got.Status != model.JobPROpened || got.PRURL != prURL {
+		t.Errorf("finished job was touched: %+v", got)
+	}
+
+	// Idempotent: nothing is left to recover.
+	if n, err := s.FailInterrupted(ctx); err != nil || n != 0 {
+		t.Errorf("second FailInterrupted = %d, %v; want 0, nil", n, err)
+	}
+}
+
+func TestFailInterruptedOnEmptyStore(t *testing.T) {
+	s, _ := openTemp(t, newClock())
+	if n, err := s.FailInterrupted(context.Background()); err != nil || n != 0 {
+		t.Errorf("FailInterrupted = %d, %v; want 0, nil", n, err)
+	}
+}
+
+// TestRecoveryAfterCrash simulates a crash: the process dies with a job running
+// and another queued, and the next start recovers them.
+func TestRecoveryAfterCrash(t *testing.T) {
+	ctx := context.Background()
+	clock := newClock()
+	s, path := openTemp(t, clock)
+	_, _ = s.Enqueue(ctx, sampleEvent("was-running"))
+	_, _ = s.Enqueue(ctx, sampleEvent("was-queued"))
+	_ = s.Start(ctx, "was-running")
+	if err := s.Close(); err != nil { // no Finish: the "crash"
+		t.Fatal(err)
+	}
+
+	restarted, err := Open(ctx, path, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	if n, err := restarted.FailInterrupted(ctx); err != nil || n != 1 {
+		t.Fatalf("FailInterrupted = %d, %v; want 1, nil", n, err)
+	}
+	if got, _ := restarted.Get(ctx, "was-running"); got.Status != model.JobFailed {
+		t.Errorf("was-running = %s, want failed", got.Status)
+	}
+	if got, _ := restarted.Get(ctx, "was-queued"); got.Status != model.JobQueued {
+		t.Errorf("was-queued = %s, want queued", got.Status)
+	}
+	// The recovered job can be redelivered by Gitea but must not be re-created.
+	if created, _ := restarted.Enqueue(ctx, sampleEvent("was-running")); created {
+		t.Error("a recovered delivery was enqueued again")
+	}
+}

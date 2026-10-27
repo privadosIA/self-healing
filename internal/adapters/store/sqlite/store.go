@@ -136,6 +136,24 @@ func (s *Store) Finish(ctx context.Context, deliveryID string, res model.JobResu
 	return s.checkTransition(ctx, r, err, deliveryID)
 }
 
+// interruptedMessage is stored on jobs that a restart cut short.
+const interruptedMessage = "interrupted by a restart"
+
+// FailInterrupted marks every running job as failed.
+func (s *Store) FailInterrupted(ctx context.Context) (int, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status = 'failed', error = ?, updated_at = ? WHERE status = 'running'`,
+		interruptedMessage, s.now())
+	if err != nil {
+		return 0, fmt.Errorf("recover interrupted jobs: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("recover interrupted jobs: %w", err)
+	}
+	return int(n), nil
+}
+
 // checkTransition turns "no row updated" into ErrNotFound or
 // ErrInvalidTransition depending on whether the job exists.
 func (s *Store) checkTransition(ctx context.Context, res sql.Result, err error, deliveryID string) error {
