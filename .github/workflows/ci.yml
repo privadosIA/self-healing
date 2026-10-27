@@ -1,6 +1,6 @@
 name: CI
 
-# Sin filtro de ramas: corre en cualquier push y en los PR.
+# No branch filter: runs on every push and on pull requests.
 on:
   push:
   pull_request:
@@ -14,30 +14,32 @@ permissions:
 
 jobs:
   ci:
-    name: Vet, lint, tests y build
+    name: Lint, tests, vulnerability scan and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
-      - name: Vet
-        run: go vet ./...
+      # The steps below run the same Makefile targets as a local checkout, with
+      # the same pinned tool versions (staticcheck, govulncheck, gosec).
+      - name: Lint (gofmt, go vet, staticcheck)
+        run: make lint
 
-      - name: Staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - name: Tests (race detector, coverage)
+        run: make test
 
-      - name: Tests (race, con cobertura)
-        run: go test ./... -race -coverprofile=coverage.out
+      - name: Vulnerability scan (govulncheck, gosec)
+        run: make vuln
 
       - name: Build
-        run: CGO_ENABLED=0 go build ./...
+        run: make build
 
-      - name: Publicar cobertura
+      - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage
           path: coverage.out

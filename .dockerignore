@@ -1,0 +1,13 @@
+.git
+.claude
+openspec
+bin
+dist
+coverage.out
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite*
+workdir
+reports

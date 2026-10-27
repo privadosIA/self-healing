@@ -11,11 +11,21 @@ coverage.out
 .env.*
 !.env.example
 *.pem
+*.key
 
-# IDEs
+# Datos locales del daemon
+*.db
+*.db-*
+*.sqlite*
+workdir/
+reports/
+
+# IDEs (solo se comparten los settings del proyecto en .vscode)
 .idea/
 .vs/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 *.iml
 *.swp
 
