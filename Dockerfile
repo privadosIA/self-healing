@@ -25,4 +25,5 @@ USER healer
 ENV HEALER_DB_PATH=/data/healerd.db
 VOLUME /data
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD ["/usr/local/bin/healerd", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/healerd"]

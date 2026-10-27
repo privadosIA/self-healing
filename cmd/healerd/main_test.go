@@ -192,3 +192,65 @@ func TestFailsWhenThePortIsTaken(t *testing.T) {
 		t.Errorf("exit %d\n%s", code, stderr)
 	}
 }
+
+func TestHealthcheckSubcommand(t *testing.T) {
+	bin := binary(t)
+	addr := freeAddr(t)
+
+	// Nothing is listening yet: the check must fail.
+	if code, stderr := runBinaryArgs(t, bin, []string{"healthcheck"}, []string{"PATH=" + os.Getenv("PATH"), "HEALER_LISTEN_ADDR=" + addr}); code != 1 {
+		t.Errorf("healthcheck against nothing exited %d\n%s", code, stderr)
+	}
+
+	cmd := exec.Command(bin)
+	cmd.Env = validEnv(t, addr)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		code, _ := runBinaryArgs(t, bin, []string{"healthcheck"}, []string{"PATH=" + os.Getenv("PATH"), "HEALER_LISTEN_ADDR=" + addr})
+		if code == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("healthcheck never succeeded against a running daemon")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// A listen address on all interfaces is probed through loopback.
+	_, port, _ := net.SplitHostPort(addr)
+	if code, stderr := runBinaryArgs(t, bin, []string{"healthcheck"}, []string{"HEALER_LISTEN_ADDR=0.0.0.0:" + port}); code != 0 {
+		t.Errorf("healthcheck with a wildcard address exited %d\n%s", code, stderr)
+	}
+	if code, _ := runBinaryArgs(t, bin, []string{"healthcheck"}, []string{"HEALER_LISTEN_ADDR=not-an-address"}); code != 1 {
+		t.Errorf("an invalid address exited %d, want 1", code)
+	}
+}
+
+func TestUnknownSubcommand(t *testing.T) {
+	code, stderr := runBinaryArgs(t, binary(t), []string{"frobnicate"}, nil)
+	if code != 2 || !strings.Contains(stderr, "unknown command") {
+		t.Errorf("exit %d\n%s", code, stderr)
+	}
+}
+
+func runBinaryArgs(t *testing.T, bin string, args, env []string) (int, string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = env
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	if exit, ok := err.(*exec.ExitError); ok {
+		return exit.ExitCode(), errBuf.String()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return 0, errBuf.String()
+}

@@ -19,6 +19,7 @@ coverage.out
 *.sqlite*
 workdir/
 reports/
+/deploy/secrets/
 
 # IDEs (solo se comparten los settings del proyecto en .vscode)
 .idea/

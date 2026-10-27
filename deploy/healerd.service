@@ -1,0 +1,67 @@
+# systemd unit for healerd. Install as /etc/systemd/system/healerd.service.
+#
+#   sudo useradd --system --home-dir /var/lib/healerd --shell /usr/sbin/nologin healerd
+#   sudo install -m 0755 bin/healerd /usr/local/bin/healerd
+#   sudo install -d -m 0750 -o root -g healerd /etc/healerd
+#   sudo install -m 0640 -o root -g healerd .env /etc/healerd/healerd.env   # see .env.example
+#   sudo systemctl daemon-reload && sudo systemctl enable --now healerd
+#
+# The environment file holds secrets: keep it readable by root and the healerd
+# group only. To keep secrets out of the environment altogether, use systemd
+# credentials instead (uncomment the two lines in [Service] and drop the
+# matching HEALER_GITEA_TOKEN line from the environment file).
+
+[Unit]
+Description=healerd - opens auto-fix pull requests for failed CI pipelines
+Documentation=https://github.com/privadosIA/self-healing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=healerd
+Group=healerd
+EnvironmentFile=/etc/healerd/healerd.env
+Environment=HEALER_DB_PATH=/var/lib/healerd/healerd.db
+#LoadCredential=gitea_token:/etc/healerd/gitea_token
+#Environment=HEALER_GITEA_TOKEN_FILE=%d/gitea_token
+ExecStart=/usr/local/bin/healerd
+Restart=on-failure
+RestartSec=5s
+
+# On SIGTERM healerd lets running jobs finish for HEALER_SHUTDOWN_GRACE (30s by
+# default) plus a few seconds to close; give it more than that before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=60s
+
+# State: the SQLite database lives in /var/lib/healerd.
+StateDirectory=healerd
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/healerd
+# Clones are made under /tmp, which is private to the service and wiped after it.
+PrivateTmp=true
+UMask=0077
+
+# Hardening. healerd needs the network and the git executable, nothing else.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
