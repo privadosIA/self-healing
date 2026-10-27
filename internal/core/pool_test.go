@@ -54,7 +54,7 @@ func (r *runner) Heal(ctx context.Context, ev model.WebhookEvent) (model.JobResu
 	r.mu.Lock()
 	r.order = append(r.order, ev.DeliveryID)
 	var n int
-	fmt.Sscanf(ev.DeliveryID, "r%d-j%d", new(int64), &n)
+	_, _ = fmt.Sscanf(ev.DeliveryID, "r%d-j%d", new(int64), &n) // ids come from job() above
 	r.perRepo[ev.RepoID] = append(r.perRepo[ev.RepoID], n)
 	r.active[ev.RepoID]++
 	r.maxRepo[ev.RepoID] = max(r.maxRepo[ev.RepoID], r.active[ev.RepoID])

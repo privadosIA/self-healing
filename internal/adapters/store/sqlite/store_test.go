@@ -199,7 +199,7 @@ func TestPersistsAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	got, err := s2.Get(ctx, "d1")
 	if err != nil || got.Status != model.JobRunning {
 		t.Errorf("after reopen: %+v, %v", got, err)
@@ -394,7 +394,7 @@ func TestRecoveryAfterCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer restarted.Close()
+	defer func() { _ = restarted.Close() }()
 	if n, err := restarted.FailInterrupted(ctx); err != nil || n != 1 {
 		t.Fatalf("FailInterrupted = %d, %v; want 1, nil", n, err)
 	}

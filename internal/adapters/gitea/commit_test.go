@@ -219,7 +219,7 @@ func TestBranchExistsReportsRemoteFailuresWithoutTheToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.Close()
+	defer func() { _ = ws.Close() }()
 	repo.srv.Close() // the remote disappears
 
 	_, err = ws.BranchExists(context.Background(), "auto-fix/x/0123456")

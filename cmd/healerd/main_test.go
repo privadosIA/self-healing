@@ -49,7 +49,7 @@ func freeAddr(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	return ln.Addr().String()
 }
 
@@ -186,7 +186,7 @@ func TestFailsWhenThePortIsTaken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	code, stderr := runBinary(t, bin, validEnv(t, ln.Addr().String()), 20*time.Second)
 	if code != 1 || !strings.Contains(stderr, "listening on") {
 		t.Errorf("exit %d\n%s", code, stderr)

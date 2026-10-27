@@ -71,7 +71,7 @@ func TestPushRejectsBadBranchNamesAndWrongTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer good.Close()
+	defer func() { _ = good.Close() }()
 	// Same checkout, but the stored credentials no longer work.
 	w := good.(*workspace)
 	w.opts.Token = "revoked-token"

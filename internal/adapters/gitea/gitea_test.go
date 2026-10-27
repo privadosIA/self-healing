@@ -347,7 +347,7 @@ func TestReadFileSafety(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.Close()
+	defer func() { _ = ws.Close() }()
 
 	t.Run("reads regular files", func(t *testing.T) {
 		if b, err := ws.ReadFile("sub/ok.go"); err != nil || string(b) != "package sub\n" {

@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```sh
 make build        # static binary in bin/healerd
 make test         # go test ./... -race with coverage
-make lint         # gofmt check, go vet, staticcheck (pinned)
+make lint         # gofmt check, go vet, staticcheck, golangci-lint (pinned)
 make vuln         # govulncheck and gosec (pinned)
 make docker       # image, needs Docker
 

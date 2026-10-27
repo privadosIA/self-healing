@@ -14,7 +14,7 @@ func TestParseFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	got, err := Parse(f)
 	if err != nil {
@@ -52,7 +52,7 @@ func TestParseFixture(t *testing.T) {
 func TestParseIgnoresNonVulnerabilities(t *testing.T) {
 	// The fixture also holds a misconfiguration and an empty result.
 	f, _ := os.Open("../../../testdata/trivy/report.json")
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	got, _ := Parse(f)
 	for _, fd := range got {
 		if fd.File == "Dockerfile" || fd.File == "clean/go.sum" {

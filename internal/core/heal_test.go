@@ -398,7 +398,7 @@ func TestHealUndoesThePushWhenThePullRequestFails(t *testing.T) {
 	// No cleanup when nothing was pushed.
 	h = newHarness()
 	h.pushErr = errors.New("boom")
-	h.healer(3).Heal(context.Background(), event())
+	_, _ = h.healer(3).Heal(context.Background(), event())
 	if h.called("ws.delete-branch") != 0 {
 		t.Error("deleted a branch that was never pushed")
 	}
@@ -527,7 +527,7 @@ func TestHealUsesTheEventsOwnBranchAsTheBase(t *testing.T) {
 	h := newHarness()
 	ev := event()
 	ev.Branch = "release/1.2"
-	h.healer(3).Heal(context.Background(), ev)
+	_, _ = h.healer(3).Heal(context.Background(), ev)
 	if h.pr.Base != "release/1.2" || h.scannerRepo.Branch != "release/1.2" {
 		t.Errorf("base %q, scanner branch %q", h.pr.Base, h.scannerRepo.Branch)
 	}

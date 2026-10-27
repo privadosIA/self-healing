@@ -68,7 +68,7 @@ On `SIGINT` or `SIGTERM` the daemon stops taking requests, lets running jobs fin
 ```sh
 make build   # static binary in bin/healerd
 make test    # tests with the race detector
-make lint    # gofmt, go vet, staticcheck
+make lint    # gofmt, go vet, staticcheck, golangci-lint
 make vuln    # govulncheck and gosec
 make docker  # build the container image
 ```
