@@ -12,6 +12,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/privadosIA/self-healing/internal/glob"
 )
 
 const (
@@ -114,6 +116,9 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		if g = strings.TrimSpace(g); g != "" {
 			c.ExcludeGlobs = append(c.ExcludeGlobs, g)
 		}
+	}
+	if _, err := glob.CompileAll(c.ExcludeGlobs); err != nil {
+		l.fail("%sEXCLUDE_GLOBS is invalid: %v", envPrefix, err)
 	}
 
 	if err := errors.Join(l.errs...); err != nil {

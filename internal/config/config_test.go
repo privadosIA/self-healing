@@ -109,6 +109,15 @@ func TestLoad(t *testing.T) {
 			wantErr: []string{"HEALER_GIT_AUTHOR_EMAIL must not contain"},
 		},
 		{
+			name:    "invalid exclude glob",
+			mutate:  func(e map[string]string) { e["HEALER_EXCLUDE_GLOBS"] = "**/*.lock,[unclosed" },
+			wantErr: []string{"HEALER_EXCLUDE_GLOBS is invalid"},
+		},
+		{
+			name:   "custom exclude globs",
+			mutate: func(e map[string]string) { e["HEALER_EXCLUDE_GLOBS"] = "vendor/**, *.pb.go" },
+		},
+		{
 			name:    "bad log level",
 			mutate:  func(e map[string]string) { e["HEALER_LOG_LEVEL"] = "verbose" },
 			wantErr: []string{"HEALER_LOG_LEVEL must be one of"},
