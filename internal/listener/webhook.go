@@ -32,7 +32,7 @@ func (e errIgnored) Error() string { return string(e) }
 //
 // Responses: 202 job queued, 200 duplicate delivery, 204 event ignored,
 // 400 malformed payload, 405 wrong method, 500 store failure. m may be nil.
-func NewWebhookHandler(store ports.JobStore, log *slog.Logger, m *Metrics) http.Handler {
+func NewWebhookHandler(store ports.JobEnqueuer, log *slog.Logger, m *Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
