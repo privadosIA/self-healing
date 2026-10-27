@@ -2,6 +2,7 @@ package gitea
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,8 +124,12 @@ func TestCommitPatchFailuresCommitNothing(t *testing.T) {
 			repo, ws := checkout(t)
 			s := spec()
 			tt.mutate(&s)
-			if _, err := ws.CommitPatch(context.Background(), s); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+			_, err := ws.CommitPatch(context.Background(), s)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("err = %v, want it to contain %q", err, tt.wantErr)
+			}
+			if !errors.Is(err, ports.ErrPatchRejected) {
+				t.Errorf("err = %v, want it to wrap ErrPatchRejected so the job is skipped", err)
 			}
 			if head := ws.git(t, "rev-parse", "HEAD"); head != repo.sha {
 				t.Errorf("HEAD moved to %s", head)

@@ -62,7 +62,7 @@ func (w *workspace) CommitPatch(ctx context.Context, spec ports.CommitSpec) (str
 		return "", fmt.Errorf("gitea: creating branch: %w", err)
 	}
 	if err := gitcli.ApplyToIndex(ctx, w.dir, spec.Diff, w.opts); err != nil {
-		return "", fmt.Errorf("gitea: the patch does not apply: %w", err)
+		return "", fmt.Errorf("gitea: the patch does not apply (%w): %w", ports.ErrPatchRejected, err)
 	}
 	staged, err := gitcli.StagedFiles(ctx, w.dir, w.opts)
 	if err != nil {
@@ -70,7 +70,7 @@ func (w *workspace) CommitPatch(ctx context.Context, spec ports.CommitSpec) (str
 	}
 	if len(staged) != 1 || staged[0] != spec.File {
 		_ = gitcli.ResetHard(ctx, w.dir, w.opts)
-		return "", errors.New("gitea: the patch changes files other than the finding's")
+		return "", fmt.Errorf("gitea: the patch changes files other than the finding's (%w)", ports.ErrPatchRejected)
 	}
 	sha, err := gitcli.Commit(ctx, w.dir, message, w.opts)
 	if err != nil {

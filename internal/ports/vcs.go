@@ -1,6 +1,14 @@
 package ports
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrPatchRejected means the patch cannot be used on this checkout: it does not
+// apply, or it changes files other than the finding's. The job should end
+// skipped, not failed.
+var ErrPatchRejected = errors.New("patch rejected")
 
 // Trailer is a "Key: value" line at the end of a commit message.
 type Trailer struct {
