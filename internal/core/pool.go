@@ -39,6 +39,9 @@ type PoolConfig struct {
 	Workers int
 	// MaxPending bounds the jobs waiting or running in memory; 1024 by default.
 	MaxPending int
+	// JobTimeout bounds one job; zero means no bound. A job that exceeds it is
+	// cancelled and recorded as failed, so a stuck call cannot pin a worker.
+	JobTimeout time.Duration
 	// Grace is how long running jobs may finish after shutdown begins before
 	// they are cancelled; 30s by default.
 	Grace time.Duration
@@ -215,6 +218,11 @@ func (p *Pool) run(ctx context.Context, ev model.WebhookEvent) {
 			p.cfg.Log.Error("job panicked", "delivery_id", ev.DeliveryID, "panic", fmt.Sprint(r))
 		}
 	}()
+	if p.cfg.JobTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.cfg.JobTimeout)
+		defer cancel()
+	}
 	res, err := p.cfg.Runner.Heal(ctx, ev)
 	if err != nil {
 		if errors.Is(err, ports.ErrInvalidTransition) {

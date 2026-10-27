@@ -71,6 +71,16 @@ The daemon refuses to start if this list is empty, or if the host of `HEALER_GIT
 | `HEALER_GIT_AUTHOR_NAME` | no | `ci-healer-bot` | Name on the commits `healerd` creates. |
 | `HEALER_GIT_AUTHOR_EMAIL` | no | `ci-healer-bot@users.noreply.invalid` | Email on those commits. Use the bot account's email if you want Gitea to link the commits to it. |
 
+### Timeouts
+
+Values are Go durations such as `90s` or `5m`.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `HEALER_LLM_TIMEOUT` | no | `5m` | How long one request to the LLM may take. A local model can be slow. |
+| `HEALER_JOB_TIMEOUT` | no | `15m` | Upper bound for a whole job (scan, clone, model call, push, pull request). A stuck job is cancelled and recorded as failed. |
+| `HEALER_SHUTDOWN_GRACE` | no | `30s` | On SIGINT or SIGTERM, how long running jobs may finish before they are cancelled. Jobs that had not started stay queued for the next start. |
+
 ### Behavior
 
 | Variable | Required | Default | Description |

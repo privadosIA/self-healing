@@ -3,6 +3,8 @@ package listener
 import (
 	"net/http"
 
+	"github.com/privadosIA/self-healing/internal/core/model"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -32,6 +34,7 @@ type Metrics struct {
 	registry *prometheus.Registry
 	webhooks *prometheus.CounterVec
 	reports  *prometheus.CounterVec
+	jobs     *prometheus.CounterVec
 }
 
 // NewMetrics builds the registry. The counters for every outcome are
@@ -48,7 +51,12 @@ func NewMetrics() *Metrics {
 			Help: "Scanner report uploads, by outcome.",
 		}, []string{"result"}),
 	}
+	m.jobs = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "healerd_jobs_total",
+		Help: "Fix jobs finished, by outcome.",
+	}, []string{"status"})
 	m.registry.MustRegister(
+		m.jobs,
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		m.webhooks,
@@ -56,6 +64,9 @@ func NewMetrics() *Metrics {
 	)
 	for _, r := range []string{resultQueued, resultDuplicate, resultIgnored, resultMalformed, resultError} {
 		m.webhooks.WithLabelValues(r)
+	}
+	for _, st := range []model.JobStatus{model.JobPROpened, model.JobSkipped, model.JobFailed} {
+		m.jobs.WithLabelValues(string(st))
 	}
 	for _, r := range []string{reportStored, reportUnauthorized, reportInvalid, reportTooLarge, reportError} {
 		m.reports.WithLabelValues(r)
@@ -73,6 +84,13 @@ func (m *Metrics) Handler() http.Handler {
 func (m *Metrics) webhook(result string) {
 	if m != nil {
 		m.webhooks.WithLabelValues(result).Inc()
+	}
+}
+
+// JobFinished counts a finished job by its outcome; a no-op on a nil Metrics.
+func (m *Metrics) JobFinished(status model.JobStatus) {
+	if m != nil {
+		m.jobs.WithLabelValues(string(status)).Inc()
 	}
 }
 

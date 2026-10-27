@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/privadosIA/self-healing/internal/glob"
 )
@@ -55,6 +56,9 @@ type Config struct {
 	GitAuthorName  string
 	GitAuthorEmail string
 
+	LLMTimeout     time.Duration
+	JobTimeout     time.Duration
+	ShutdownGrace  time.Duration
 	Workers        int
 	MaxOpenPRs     int
 	SnippetContext int
@@ -109,6 +113,10 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	c.GitAuthorName = l.identity("GIT_AUTHOR_NAME", "ci-healer-bot")
 	c.GitAuthorEmail = l.identity("GIT_AUTHOR_EMAIL", "ci-healer-bot@users.noreply.invalid")
 
+	c.LLMTimeout = l.duration("LLM_TIMEOUT", 5*time.Minute)
+	c.JobTimeout = l.duration("JOB_TIMEOUT", 15*time.Minute)
+	c.ShutdownGrace = l.duration("SHUTDOWN_GRACE", 30*time.Second)
+
 	c.Workers = l.integer("WORKERS", 2, 1)
 	c.MaxOpenPRs = l.integer("MAX_OPEN_PRS", 3, 1)
 	c.SnippetContext = l.integer("SNIPPET_CONTEXT_LINES", 30, 1)
@@ -153,6 +161,20 @@ func (l *loader) identity(name, def string) string {
 		return def
 	}
 	return v
+}
+
+// duration reads a positive Go duration such as 90s or 5m.
+func (l *loader) duration(name string, def time.Duration) time.Duration {
+	raw := l.str(name, "")
+	if raw == "" {
+		return def
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		l.fail("%s%s must be a positive duration such as 90s or 5m", envPrefix, name)
+		return def
+	}
+	return d
 }
 
 func (l *loader) integer(name string, def, lowest int) int {

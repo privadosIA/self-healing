@@ -604,3 +604,22 @@ func TestNewPoolValidation(t *testing.T) {
 func TestHealerSatisfiesJobRunner(t *testing.T) {
 	var _ JobRunner = (*Healer)(nil)
 }
+
+func TestJobTimeoutCancelsAStuckJobAndFreesTheWorker(t *testing.T) {
+	var sawDeadline atomic.Bool
+	r := newRunner()
+	r.onStart = func(ctx context.Context, ev model.WebhookEvent) {
+		if ev.DeliveryID == "r1-j1" {
+			<-ctx.Done() // stuck until the pool gives up on it
+			sawDeadline.Store(errors.Is(ctx.Err(), context.DeadlineExceeded))
+		}
+	}
+	p, stop := start(t, PoolConfig{Runner: r, Workers: 1, JobTimeout: 30 * time.Millisecond})
+	defer stop()
+	_ = p.Submit(job(1, 1))
+	_ = p.Submit(job(2, 1)) // needs the only worker, which the stuck job holds
+	waitFor(t, "the job after the stuck one", func() bool { return r.hasFinished("r2-j1") })
+	if !sawDeadline.Load() {
+		t.Error("the stuck job was not cancelled by the timeout")
+	}
+}

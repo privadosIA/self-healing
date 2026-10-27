@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // validEnv returns a minimal valid configuration using placeholder values.
@@ -118,6 +119,29 @@ func TestLoad(t *testing.T) {
 			mutate: func(e map[string]string) { e["HEALER_EXCLUDE_GLOBS"] = "vendor/**, *.pb.go" },
 		},
 		{
+			name:    "unparseable duration",
+			mutate:  func(e map[string]string) { e["HEALER_LLM_TIMEOUT"] = "soon" },
+			wantErr: []string{"HEALER_LLM_TIMEOUT must be a positive duration"},
+		},
+		{
+			name:    "zero duration",
+			mutate:  func(e map[string]string) { e["HEALER_JOB_TIMEOUT"] = "0s" },
+			wantErr: []string{"HEALER_JOB_TIMEOUT must be a positive duration"},
+		},
+		{
+			name:    "negative duration",
+			mutate:  func(e map[string]string) { e["HEALER_SHUTDOWN_GRACE"] = "-5s" },
+			wantErr: []string{"HEALER_SHUTDOWN_GRACE must be a positive duration"},
+		},
+		{
+			name: "valid durations",
+			mutate: func(e map[string]string) {
+				e["HEALER_LLM_TIMEOUT"] = "90s"
+				e["HEALER_JOB_TIMEOUT"] = "1h"
+				e["HEALER_SHUTDOWN_GRACE"] = "1500ms"
+			},
+		},
+		{
 			name:    "bad log level",
 			mutate:  func(e map[string]string) { e["HEALER_LOG_LEVEL"] = "verbose" },
 			wantErr: []string{"HEALER_LOG_LEVEL must be one of"},
@@ -160,6 +184,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.GitAuthorName != "ci-healer-bot" || c.GitAuthorEmail != "ci-healer-bot@users.noreply.invalid" {
 		t.Errorf("unexpected author defaults: %q <%s>", c.GitAuthorName, c.GitAuthorEmail)
+	}
+	if c.LLMTimeout != 5*time.Minute || c.JobTimeout != 15*time.Minute || c.ShutdownGrace != 30*time.Second {
+		t.Errorf("unexpected timeout defaults: %v %v %v", c.LLMTimeout, c.JobTimeout, c.ShutdownGrace)
 	}
 	if c.Workers != 2 || c.MaxOpenPRs != 3 || c.SnippetContext != 30 || c.LogLevel != "info" {
 		t.Errorf("unexpected defaults: %+v", c)
