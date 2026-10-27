@@ -99,6 +99,16 @@ func TestLoad(t *testing.T) {
 			wantErr: []string{"HEALER_WORKERS must be an integer >= 1"},
 		},
 		{
+			name:    "author name with a line break",
+			mutate:  func(e map[string]string) { e["HEALER_GIT_AUTHOR_NAME"] = "bot\nCo-Authored-By: x" },
+			wantErr: []string{"HEALER_GIT_AUTHOR_NAME must not contain"},
+		},
+		{
+			name:    "author email with angle brackets",
+			mutate:  func(e map[string]string) { e["HEALER_GIT_AUTHOR_EMAIL"] = "<bot@example.com>" },
+			wantErr: []string{"HEALER_GIT_AUTHOR_EMAIL must not contain"},
+		},
+		{
 			name:    "bad log level",
 			mutate:  func(e map[string]string) { e["HEALER_LOG_LEVEL"] = "verbose" },
 			wantErr: []string{"HEALER_LOG_LEVEL must be one of"},
@@ -138,6 +148,9 @@ func TestLoadDefaults(t *testing.T) {
 	c, err := Load(lookupFrom(validEnv()))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if c.GitAuthorName != "ci-healer-bot" || c.GitAuthorEmail != "ci-healer-bot@users.noreply.invalid" {
+		t.Errorf("unexpected author defaults: %q <%s>", c.GitAuthorName, c.GitAuthorEmail)
 	}
 	if c.Workers != 2 || c.MaxOpenPRs != 3 || c.SnippetContext != 30 || c.LogLevel != "info" {
 		t.Errorf("unexpected defaults: %+v", c)

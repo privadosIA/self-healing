@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/privadosIA/self-healing/internal/gitcli"
 )
 
 // maxFileBytes bounds what ReadFile returns; source files that need a fix are
@@ -20,6 +22,7 @@ var ErrFileTooLarge = errors.New("gitea: file is too large")
 type workspace struct {
 	dir  string
 	root *os.Root
+	opts gitcli.Options
 
 	once     sync.Once
 	closeErr error

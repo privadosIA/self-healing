@@ -23,6 +23,8 @@ type Config struct {
 	// Allow is the egress allowlist; git does not go through the safehttp
 	// client, so the clone host is checked here.
 	Allow config.Allowlist
+	// AuthorName and AuthorEmail identify the author and committer of fix commits.
+	AuthorName, AuthorEmail string
 	// WorkRoot is the directory workspaces are created in; os.TempDir() when empty.
 	WorkRoot string
 }
@@ -33,7 +35,8 @@ type Adapter struct {
 	token     string
 	allow     config.Allowlist
 	workRoot  string
-	protocols string // git transports; DefaultProtocols unless a test overrides it
+	author    [2]string // name, email
+	protocols string    // git transports; DefaultProtocols unless a test overrides it
 }
 
 var _ ports.VCS = (*Adapter)(nil)
@@ -53,11 +56,14 @@ func New(cfg Config) (*Adapter, error) {
 	if !cfg.Allow.Allows(base.Hostname()) {
 		return nil, errors.New("gitea: the Gitea host is not permitted by the allowlist")
 	}
+	if cfg.AuthorName == "" || cfg.AuthorEmail == "" {
+		return nil, errors.New("gitea: AuthorName and AuthorEmail are required")
+	}
 	root := cfg.WorkRoot
 	if root == "" {
 		root = os.TempDir()
 	}
-	return &Adapter{base: base, token: cfg.Token, allow: cfg.Allow, workRoot: root}, nil
+	return &Adapter{base: base, token: cfg.Token, allow: cfg.Allow, workRoot: root, author: [2]string{cfg.AuthorName, cfg.AuthorEmail}}, nil
 }
 
 // checkCloneURL accepts only a plain http(s) URL on the configured Gitea host.
@@ -112,7 +118,7 @@ func (a *Adapter) Checkout(ctx context.Context, cloneURL, sha string) (ports.Wor
 		}
 	}()
 
-	opts := gitcli.Options{Token: a.token, Protocols: a.protocols}
+	opts := gitcli.Options{Token: a.token, Protocols: a.protocols, AuthorName: a.author[0], AuthorEmail: a.author[1]}
 	if err := gitcli.Clone(ctx, dir, cloneURL, sha, opts); err != nil {
 		return nil, fmt.Errorf("gitea: clone failed: %w", err)
 	}
@@ -121,5 +127,5 @@ func (a *Adapter) Checkout(ctx context.Context, cloneURL, sha string) (ports.Wor
 		return nil, fmt.Errorf("gitea: opening workspace: %w", err)
 	}
 	keep = true
-	return &workspace{dir: dir, root: root}, nil
+	return &workspace{dir: dir, root: root, opts: opts}, nil
 }

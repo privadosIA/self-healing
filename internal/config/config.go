@@ -50,6 +50,9 @@ type Config struct {
 
 	AllowedHosts Allowlist
 
+	GitAuthorName  string
+	GitAuthorEmail string
+
 	Workers        int
 	MaxOpenPRs     int
 	SnippetContext int
@@ -101,6 +104,9 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		l.fail("%sLLM_MODEL is required", envPrefix)
 	}
 
+	c.GitAuthorName = l.identity("GIT_AUTHOR_NAME", "ci-healer-bot")
+	c.GitAuthorEmail = l.identity("GIT_AUTHOR_EMAIL", "ci-healer-bot@users.noreply.invalid")
+
 	c.Workers = l.integer("WORKERS", 2, 1)
 	c.MaxOpenPRs = l.integer("MAX_OPEN_PRS", 3, 1)
 	c.SnippetContext = l.integer("SNIPPET_CONTEXT_LINES", 30, 1)
@@ -132,6 +138,16 @@ func (l *loader) str(name, def string) string {
 		}
 	}
 	return def
+}
+
+// identity reads a git author field, which must be one plain line.
+func (l *loader) identity(name, def string) string {
+	v := l.str(name, def)
+	if strings.ContainsAny(v, "<>\r\n\x00") {
+		l.fail("%s%s must not contain angle brackets or line breaks", envPrefix, name)
+		return def
+	}
+	return v
 }
 
 func (l *loader) integer(name string, def, lowest int) int {

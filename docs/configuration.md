@@ -64,6 +64,13 @@ The daemon refuses to start if this list is empty, or if the host of `HEALER_GIT
 | `HEALER_LLM_API_KEY` | no | empty | API key sent to the LLM server, if it requires one. |
 | `HEALER_LLM_MODEL` | **yes** | none | Model name or alias sent in the `model` field. |
 
+### Commit author
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `HEALER_GIT_AUTHOR_NAME` | no | `ci-healer-bot` | Name on the commits `healerd` creates. |
+| `HEALER_GIT_AUTHOR_EMAIL` | no | `ci-healer-bot@users.noreply.invalid` | Email on those commits. Use the bot account's email if you want Gitea to link the commits to it. |
+
 ### Behavior
 
 | Variable | Required | Default | Description |

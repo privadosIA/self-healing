@@ -58,6 +58,7 @@ type fixtureRepo struct {
 	url    string // clone URL
 	sha    string
 	srv    *httptest.Server
+	bare   string // path of the served bare repository
 	mu     sync.Mutex
 	hits   int
 	auths  []string
@@ -98,7 +99,7 @@ func serveRepo(t *testing.T, files map[string]string, symlinks map[string]string
 	git(t, work, "clone", "-q", "--bare", work, bare)
 	git(t, bare, "config", "uploadpack.allowAnySHA1InWant", "true")
 
-	repo := &fixtureRepo{sha: sha}
+	repo := &fixtureRepo{sha: sha, bare: bare}
 	backendHandler := &cgi.Handler{
 		Path:   backend,
 		Stderr: io.Discard,
@@ -130,7 +131,7 @@ func newAdapter(t *testing.T, baseURL, token string, workRoot string) *Adapter {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := New(Config{BaseURL: baseURL, Token: token, Allow: al, WorkRoot: workRoot})
+	a, err := New(Config{BaseURL: baseURL, Token: token, Allow: al, WorkRoot: workRoot, AuthorName: "ci-healer-bot", AuthorEmail: "bot@example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +296,7 @@ func TestCloneURLValidation(t *testing.T) {
 
 func TestCloneURLComparisonIgnoresCaseAndDefaultPorts(t *testing.T) {
 	al, _ := config.ParseAllowlist("example.com")
-	a, err := New(Config{BaseURL: "https://Gitea.Example.com", Token: testToken, Allow: al})
+	a, err := New(Config{BaseURL: "https://Gitea.Example.com", Token: testToken, Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,12 +400,14 @@ func TestReadFileSafety(t *testing.T) {
 func TestNewRejectsBadConfig(t *testing.T) {
 	al, _ := config.ParseAllowlist("example.com")
 	tests := map[string]Config{
-		"not a url":              {BaseURL: "gitea", Token: "t", Allow: al},
-		"bad scheme":             {BaseURL: "ssh://gitea.example.com", Token: "t", Allow: al},
-		"credentials":            {BaseURL: "https://u:p@gitea.example.com", Token: "t", Allow: al},
-		"no token":               {BaseURL: "https://gitea.example.com", Allow: al},
-		"host outside allowlist": {BaseURL: "https://gitea.other.test", Token: "t", Allow: al},
-		"empty allowlist":        {BaseURL: "https://gitea.example.com", Token: "t"},
+		"not a url":              {BaseURL: "gitea", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
+		"bad scheme":             {BaseURL: "ssh://gitea.example.com", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
+		"credentials":            {BaseURL: "https://u:p@gitea.example.com", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
+		"no token":               {BaseURL: "https://gitea.example.com", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
+		"host outside allowlist": {BaseURL: "https://gitea.other.test", Token: "t", Allow: al, AuthorName: "b", AuthorEmail: "b@example.com"},
+		"empty allowlist":        {BaseURL: "https://gitea.example.com", Token: "t", AuthorName: "b", AuthorEmail: "b@example.com"},
+		"no author name":         {BaseURL: "https://gitea.example.com", Token: "t", Allow: al, AuthorEmail: "b@example.com"},
+		"no author email":        {BaseURL: "https://gitea.example.com", Token: "t", Allow: al, AuthorName: "b"},
 	}
 	for name, cfg := range tests {
 		if _, err := New(cfg); err == nil {

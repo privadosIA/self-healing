@@ -27,6 +27,8 @@ type Options struct {
 	Token string
 	// Protocols is the GIT_ALLOW_PROTOCOL value; DefaultProtocols when empty.
 	Protocols string
+	// AuthorName and AuthorEmail identify the author and committer of commits.
+	AuthorName, AuthorEmail string
 }
 
 // environment builds the environment for a git process: the caller's, minus
@@ -51,11 +53,18 @@ func (o Options) environment() []string {
 		{"http.followRedirects", "false"},
 		{"http.proxy", ""},
 		{"credential.helper", ""},
+		{"commit.gpgsign", "false"},
 	}
 	if o.Token != "" {
 		config = append(config, [2]string{"http.extraHeader", "Authorization: token " + o.Token})
 	}
 
+	if o.AuthorName != "" {
+		env = append(env, "GIT_AUTHOR_NAME="+o.AuthorName, "GIT_COMMITTER_NAME="+o.AuthorName)
+	}
+	if o.AuthorEmail != "" {
+		env = append(env, "GIT_AUTHOR_EMAIL="+o.AuthorEmail, "GIT_COMMITTER_EMAIL="+o.AuthorEmail)
+	}
 	env = append(env,
 		"HOME=/nonexistent",
 		"GIT_CONFIG_NOSYSTEM=1",

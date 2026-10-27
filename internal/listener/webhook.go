@@ -18,10 +18,6 @@ const (
 	deliveryHeader = "X-Gitea-Delivery"
 )
 
-// autoFixPrefix marks branches created by healerd; events on them are ignored
-// so a failing fix cannot trigger another fix.
-const autoFixPrefix = "auto-fix/"
-
 // errIgnored means the event is valid but needs no job.
 type errIgnored string
 
@@ -154,7 +150,7 @@ func parseEvent(event string, r *http.Request) (model.WebhookEvent, error) {
 	if err := validate(ev); err != nil {
 		return ev, err
 	}
-	if strings.HasPrefix(ev.Branch, autoFixPrefix) {
+	if strings.HasPrefix(ev.Branch, model.AutoFixPrefix) {
 		return ev, errIgnored("event on an auto-fix branch")
 	}
 	return ev, nil
