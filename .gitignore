@@ -1,0 +1,31 @@
+# Build
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Entorno y claves
+.env
+.env.*
+!.env.example
+*.pem
+
+# IDEs
+.idea/
+.vs/
+.vscode/
+*.iml
+*.swp
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Dependencias de node (tooling auxiliar)
+node_modules/
+
+# Local de Claude Code
+.claude/settings.local.json
+.mcp.json
