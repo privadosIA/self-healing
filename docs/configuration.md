@@ -8,7 +8,7 @@ The daemon validates everything at startup and reports **all** problems at once.
 
 Any secret can be supplied either directly or from a file, which suits Docker and Kubernetes secrets:
 
-- `HEALER_GITEA_TOKEN=...`, or
+- `HEALER_GITEA_TOKEN=changeme`, or
 - `HEALER_GITEA_TOKEN_FILE=/run/secrets/gitea_token`
 
 Setting both for the same secret is an error. Surrounding whitespace in the file is trimmed. This applies to `HEALER_GITEA_TOKEN`, `HEALER_WEBHOOK_SECRET`, `HEALER_REPORTS_TOKEN`, `HEALER_SONAR_TOKEN` and `HEALER_LLM_API_KEY`.
@@ -32,7 +32,7 @@ Setting both for the same secret is an error. Surrounding whitespace in the file
 The daemon refuses to start if this list is empty, or if the host of `HEALER_GITEA_URL`, `HEALER_SONAR_URL` or `HEALER_LLM_URL` is not covered by it. This is deliberate: it stops a misconfiguration from sending source code to an unexpected host.
 
 - A suffix such as `example.com` matches `example.com` and any subdomain (`gitea.example.com`), but not `evilexample.com`.
-- A CIDR or single IP such as `10.0.0.0/8` or `192.0.2.7` matches endpoints given as IP addresses.
+- A CIDR or single IP such as `192.0.2.0/24` or `192.0.2.7` matches endpoints given as IP addresses.
 - Hostnames are matched against suffixes only. The HTTP clients apply the same rules to every connection they open, so a redirect to a host outside the list is refused. They also ignore the `HTTP_PROXY` and `HTTPS_PROXY` variables, because a proxy would hide the real destination.
 
 ### Gitea
