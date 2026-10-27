@@ -1,0 +1,19 @@
+{
+  "action": "completed",
+  "workflow_job": {
+    "id": 101,
+    "run_id": 2001,
+    "name": "quality",
+    "head_sha": "0123456789abcdef0123456789abcdef01234567",
+    "head_branch": "main",
+    "status": "completed",
+    "conclusion": "failure"
+  },
+  "repository": {
+    "id": 42,
+    "full_name": "acme/widget",
+    "clone_url": "https://gitea.example.com/acme/widget.git",
+    "default_branch": "main"
+  },
+  "sender": { "login": "ci-user" }
+}

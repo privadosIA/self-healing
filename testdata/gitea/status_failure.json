@@ -1,0 +1,12 @@
+{
+  "state": "failure",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "context": "ci/quality",
+  "branches": [{ "name": "main" }],
+  "repository": {
+    "id": 42,
+    "full_name": "acme/widget",
+    "clone_url": "https://gitea.example.com/acme/widget.git",
+    "default_branch": "main"
+  }
+}
