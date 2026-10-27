@@ -53,4 +53,7 @@ type Finding struct {
 	Message         string
 	FixHint         string
 	RuleDescription string
+	// Package is the affected dependency for dependency findings (Trivy). Such
+	// findings carry no line: it is located in File once the repository is cloned.
+	Package string
 }
