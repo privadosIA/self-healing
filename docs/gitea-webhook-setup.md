@@ -73,7 +73,7 @@ In the repository, open *Settings → Webhooks → Add Webhook → Gitea* and fi
 | `workflow_job` | a job whose `conclusion` is `failure` |
 | `status` | a commit status whose `state` is `failure` or `error` |
 
-The payload formats are modelled on Gitea's documented webhook format, and the names of the events in the UI and the API depend on your Gitea version. Because versions differ, run the end-to-end check described in `scripts/e2e.md` against your instance before relying on it.
+The payload formats are modelled on Gitea's documented webhook format, and the names of the events in the UI and the API depend on your Gitea version. Because versions differ, run the end-to-end check in [`scripts/e2e.md`](../scripts/e2e.md) against your instance before relying on it.
 
 You can create the same webhook through the API instead of the UI:
 

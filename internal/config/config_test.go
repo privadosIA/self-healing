@@ -305,7 +305,7 @@ func TestAllowlistAllows(t *testing.T) {
 }
 
 func TestParseAllowlistErrors(t *testing.T) {
-	for _, in := range []string{"10.0.0.0/99", "bad host", "a@b.com", "host:8080", "."} {
+	for _, in := range []string{"10.0.0.0/99", "bad host", "a@example.com", "host:8080", "."} {
 		if _, err := ParseAllowlist(in); err == nil {
 			t.Errorf("ParseAllowlist(%q) expected an error", in)
 		}

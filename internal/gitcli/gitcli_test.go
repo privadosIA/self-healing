@@ -233,10 +233,10 @@ func TestEnvironmentIsLockedDown(t *testing.T) {
 	t.Setenv("GIT_WORK_TREE", "/elsewhere")
 	t.Setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
 	t.Setenv("https_proxy", "http://proxy.invalid:3128")
-	t.Setenv("HOME", "/home/someone")
+	t.Setenv("HOME", "/home/healer")
 	env := strings.Join(Options{Token: "x"}.environment(), "\n")
 
-	for _, banned := range []string{"/elsewhere", "proxy.invalid", "/home/someone"} {
+	for _, banned := range []string{"/elsewhere", "proxy.invalid", "/home/healer"} {
 		if strings.Contains(env, banned) {
 			t.Errorf("ambient value %q leaked into git's environment", banned)
 		}

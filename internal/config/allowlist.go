@@ -8,7 +8,7 @@ import (
 
 // Allowlist restricts which hosts the daemon may talk to. Entries are either
 // domain suffixes ("example.com" matches example.com and any subdomain) or
-// CIDRs / single IPs ("10.0.0.0/8"). The zero value allows nothing.
+// CIDRs / single IPs ("192.0.2.0/24"). The zero value allows nothing.
 type Allowlist struct {
 	suffixes []string
 	nets     []netip.Prefix

@@ -13,7 +13,7 @@ import (
 // documents are the files that make up the public documentation.
 func documents(t *testing.T) []string {
 	t.Helper()
-	files := []string{"../README.md", "../SECURITY.md", "../THREAT_MODEL.md", "../.env.example"}
+	files := []string{"../README.md", "../CLAUDE.md", "../SECURITY.md", "../THREAT_MODEL.md", "../.env.example"}
 	more, err := filepath.Glob("*.md")
 	if err != nil {
 		t.Fatal(err)

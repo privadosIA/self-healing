@@ -2,7 +2,7 @@
 
 A self-hosted Go daemon that turns failed CI pipelines into pull requests. It listens for failures on Gitea, reads the findings reported by SonarQube or Trivy, asks a local LLM for a small patch, and opens a pull request on an `auto-fix/*` branch for a human to review.
 
-> **Status: proof of concept.** The whole flow is implemented and covered by automated tests, including an end-to-end test against a real git server. It has not yet been run against a production Gitea, SonarQube and model: the webhook payloads are modelled on Gitea's documented format, so run the end-to-end check described in `scripts/e2e.md` on your own instance before relying on it.
+> **Status: proof of concept.** The whole flow is implemented and covered by automated tests, including an end-to-end test against a real git server. It has not yet been run against a production Gitea, SonarQube and model: the webhook payloads are modelled on Gitea's documented format, so run the end-to-end check in [`scripts/e2e.md`](scripts/e2e.md) on your own instance before relying on it.
 
 ## How it works
 
