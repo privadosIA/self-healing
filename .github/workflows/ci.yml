@@ -25,7 +25,7 @@ jobs:
 
       # The steps below run the same Makefile targets as a local checkout, with
       # the same pinned tool versions (staticcheck, govulncheck, gosec).
-      - name: Lint (gofmt, go vet, staticcheck)
+      - name: Lint (gofmt, go vet, staticcheck, golangci-lint)
         run: make lint
 
       - name: Tests (race detector, coverage)
