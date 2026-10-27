@@ -88,27 +88,23 @@ func (s *Store) Enqueue(ctx context.Context, ev model.WebhookEvent) (bool, error
 	return n == 1, nil
 }
 
-// Get returns the job of a delivery.
-func (s *Store) Get(ctx context.Context, deliveryID string) (model.Job, error) {
+const jobColumns = `id, rule_id, status, pr_url, tokens_in, tokens_out, error, event, created_at, updated_at`
+
+// scanJob decodes one row of jobColumns.
+func scanJob(scan func(dest ...any) error) (model.Job, error) {
 	var (
 		j                   model.Job
 		event, created, upd string
 		status              string
 	)
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, rule_id, status, pr_url, tokens_in, tokens_out, error, event, created_at, updated_at
-		 FROM jobs WHERE delivery_id = ?`, deliveryID).
-		Scan(&j.ID, &j.RuleID, &status, &j.PRURL, &j.TokensIn, &j.TokensOut, &j.Error, &event, &created, &upd)
-	if errors.Is(err, sql.ErrNoRows) {
-		return model.Job{}, ports.ErrNotFound
-	}
-	if err != nil {
-		return model.Job{}, fmt.Errorf("get job: %w", err)
+	if err := scan(&j.ID, &j.RuleID, &status, &j.PRURL, &j.TokensIn, &j.TokensOut, &j.Error, &event, &created, &upd); err != nil {
+		return model.Job{}, err
 	}
 	j.Status = model.JobStatus(status)
 	if err := json.Unmarshal([]byte(event), &j.Event); err != nil {
 		return model.Job{}, fmt.Errorf("decoding stored event: %w", err)
 	}
+	var err error
 	if j.CreatedAt, err = time.Parse(timeLayout, created); err != nil {
 		return model.Job{}, fmt.Errorf("decoding created_at: %w", err)
 	}
@@ -116,6 +112,43 @@ func (s *Store) Get(ctx context.Context, deliveryID string) (model.Job, error) {
 		return model.Job{}, fmt.Errorf("decoding updated_at: %w", err)
 	}
 	return j, nil
+}
+
+// Get returns the job of a delivery.
+func (s *Store) Get(ctx context.Context, deliveryID string) (model.Job, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM jobs WHERE delivery_id = ?`, deliveryID)
+	j, err := scanJob(row.Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Job{}, ports.ErrNotFound
+	}
+	if err != nil {
+		return model.Job{}, fmt.Errorf("get job: %w", err)
+	}
+	return j, nil
+}
+
+// ListQueued returns up to limit queued jobs, oldest first.
+func (s *Store) ListQueued(ctx context.Context, limit int) ([]model.Job, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+jobColumns+` FROM jobs WHERE status = 'queued' ORDER BY id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list queued jobs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var jobs []model.Job
+	for rows.Next() {
+		j, err := scanJob(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("list queued jobs: %w", err)
+		}
+		jobs = append(jobs, j)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list queued jobs: %w", err)
+	}
+	return jobs, nil
 }
 
 // Start moves a queued job to running.

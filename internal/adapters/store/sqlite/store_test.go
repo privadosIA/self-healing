@@ -486,3 +486,47 @@ func TestReportBinaryContentIsPreserved(t *testing.T) {
 		t.Errorf("content changed: %v", got)
 	}
 }
+
+func TestListQueued(t *testing.T) {
+	ctx := context.Background()
+	clock := newClock()
+	s, _ := openTemp(t, clock)
+
+	if got, err := s.ListQueued(ctx, 10); err != nil || len(got) != 0 {
+		t.Fatalf("empty store: %v, %v", got, err)
+	}
+	for _, d := range []string{"a", "b", "c", "d", "e"} {
+		clock.advance(time.Second)
+		if _, err := s.Enqueue(ctx, sampleEvent(d)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// b is running, c finished: neither is queued any more.
+	_ = s.Start(ctx, "b")
+	_ = s.Start(ctx, "c")
+	_ = s.Finish(ctx, "c", model.JobResult{Status: model.JobSkipped})
+
+	got, err := s.ListQueued(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, j := range got {
+		ids = append(ids, j.Event.DeliveryID)
+		if j.Status != model.JobQueued || j.Event.RepoFullName != "acme/widget" || j.Event.CloneURL == "" {
+			t.Errorf("job not fully decoded: %+v", j)
+		}
+	}
+	if strings.Join(ids, ",") != "a,d,e" {
+		t.Errorf("queued = %v, want oldest first and only queued ones: a,d,e", ids)
+	}
+
+	if got, _ := s.ListQueued(ctx, 2); len(got) != 2 || got[0].Event.DeliveryID != "a" || got[1].Event.DeliveryID != "d" {
+		t.Errorf("limit not honored: %+v", got)
+	}
+	for _, n := range []int{0, -1} {
+		if got, err := s.ListQueued(ctx, n); err != nil || got != nil {
+			t.Errorf("limit %d: %v, %v", n, got, err)
+		}
+	}
+}

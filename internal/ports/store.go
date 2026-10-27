@@ -34,6 +34,9 @@ type JobStore interface {
 	Start(ctx context.Context, deliveryID string) error
 	// Finish moves a running job to the terminal state in res.
 	Finish(ctx context.Context, deliveryID string, res model.JobResult) error
+	// ListQueued returns up to limit queued jobs, oldest first. The worker pool
+	// uses it to pick up jobs that survived a restart or did not fit in memory.
+	ListQueued(ctx context.Context, limit int) ([]model.Job, error)
 	// FailInterrupted marks every running job as failed and returns how many
 	// there were. Call it once at startup: a job still running then was cut
 	// short by a crash, and it may or may not have opened a pull request.

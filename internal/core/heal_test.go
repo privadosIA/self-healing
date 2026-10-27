@@ -93,6 +93,7 @@ type fakeStore harness
 func (s *fakeStore) Enqueue(context.Context, model.WebhookEvent) (bool, error) { return true, nil }
 func (s *fakeStore) Get(context.Context, string) (model.Job, error)            { return model.Job{}, nil }
 func (s *fakeStore) FailInterrupted(context.Context) (int, error)              { return 0, nil }
+func (s *fakeStore) ListQueued(context.Context, int) ([]model.Job, error)      { return nil, nil }
 func (s *fakeStore) Start(context.Context, string) error {
 	(*harness)(s).note("store.start")
 	return s.startErr
