@@ -24,11 +24,15 @@ const (
 
 // Store is a ports.JobStore backed by a SQLite file.
 type Store struct {
-	db    *sql.DB
-	clock ports.Clock
+	db         *sql.DB
+	clock      ports.Clock
+	maxReports int
 }
 
-var _ ports.JobStore = (*Store)(nil)
+var (
+	_ ports.JobStore    = (*Store)(nil)
+	_ ports.ReportStore = (*Store)(nil)
+)
 
 // Open opens (creating it if needed) the database at path and applies any
 // pending schema migrations.
@@ -53,7 +57,7 @@ func Open(ctx context.Context, path string, clock ports.Clock) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db, clock: clock}, nil
+	return &Store{db: db, clock: clock, maxReports: maxStoredReports}, nil
 }
 
 // Close releases the database.

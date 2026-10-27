@@ -17,11 +17,21 @@ const (
 	resultError     = "error"
 )
 
+// Outcomes recorded by healerd_reports_total.
+const (
+	reportStored       = "stored"
+	reportUnauthorized = "unauthorized"
+	reportInvalid      = "invalid"
+	reportTooLarge     = "too_large"
+	reportError        = "error"
+)
+
 // Metrics owns a private Prometheus registry (no global state) with the Go
 // runtime and process collectors plus the daemon's own counters.
 type Metrics struct {
 	registry *prometheus.Registry
 	webhooks *prometheus.CounterVec
+	reports  *prometheus.CounterVec
 }
 
 // NewMetrics builds the registry. The counters for every outcome are
@@ -33,14 +43,22 @@ func NewMetrics() *Metrics {
 			Name: "healerd_webhooks_total",
 			Help: "Authenticated webhooks processed, by outcome.",
 		}, []string{"result"}),
+		reports: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "healerd_reports_total",
+			Help: "Scanner report uploads, by outcome.",
+		}, []string{"result"}),
 	}
 	m.registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		m.webhooks,
+		m.reports,
 	)
 	for _, r := range []string{resultQueued, resultDuplicate, resultIgnored, resultMalformed, resultError} {
 		m.webhooks.WithLabelValues(r)
+	}
+	for _, r := range []string{reportStored, reportUnauthorized, reportInvalid, reportTooLarge, reportError} {
+		m.reports.WithLabelValues(r)
 	}
 	return m
 }
@@ -55,6 +73,13 @@ func (m *Metrics) Handler() http.Handler {
 func (m *Metrics) webhook(result string) {
 	if m != nil {
 		m.webhooks.WithLabelValues(result).Inc()
+	}
+}
+
+// report counts one report upload outcome; a no-op on a nil Metrics.
+func (m *Metrics) report(result string) {
+	if m != nil {
+		m.reports.WithLabelValues(result).Inc()
 	}
 }
 

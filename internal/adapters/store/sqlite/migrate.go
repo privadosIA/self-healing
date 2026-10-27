@@ -25,6 +25,15 @@ var migrations = []string{
 		updated_at  TEXT    NOT NULL
 	);
 	CREATE INDEX jobs_status ON jobs(status);`,
+	`CREATE TABLE reports (
+		repo_id    INTEGER NOT NULL,
+		commit_sha TEXT    NOT NULL,
+		report     BLOB    NOT NULL,
+		created_at TEXT    NOT NULL,
+		updated_at TEXT    NOT NULL,
+		PRIMARY KEY (repo_id, commit_sha)
+	);
+	CREATE INDEX reports_updated ON reports(updated_at);`,
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

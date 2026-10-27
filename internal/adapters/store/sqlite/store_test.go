@@ -409,3 +409,80 @@ func TestRecoveryAfterCrash(t *testing.T) {
 		t.Error("a recovered delivery was enqueued again")
 	}
 }
+
+func TestReportRoundTripAndReplace(t *testing.T) {
+	ctx := context.Background()
+	clock := newClock()
+	s, _ := openTemp(t, clock)
+
+	if _, err := s.GetReport(ctx, 42, "abc1234"); !errors.Is(err, ports.ErrReportNotFound) {
+		t.Fatalf("Get on empty store: %v", err)
+	}
+	if err := s.PutReport(ctx, 42, "abc1234", []byte(`{"v":1}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetReport(ctx, 42, "abc1234")
+	if err != nil || string(got) != `{"v":1}` {
+		t.Fatalf("Get = %q, %v", got, err)
+	}
+
+	// A newer upload for the same key replaces the report, keeping one row.
+	clock.advance(time.Minute)
+	if err := s.PutReport(ctx, 42, "abc1234", []byte(`{"v":2}`)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetReport(ctx, 42, "abc1234"); string(got) != `{"v":2}` {
+		t.Errorf("report not replaced: %q", got)
+	}
+	var n int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM reports").Scan(&n); err != nil || n != 1 {
+		t.Errorf("rows = %d, %v; want 1", n, err)
+	}
+
+	// Keys are independent: another repo or commit does not see it.
+	for _, k := range []struct {
+		repo int64
+		sha  string
+	}{{43, "abc1234"}, {42, "def5678"}} {
+		if _, err := s.GetReport(ctx, k.repo, k.sha); !errors.Is(err, ports.ErrReportNotFound) {
+			t.Errorf("Get(%d, %s): %v", k.repo, k.sha, err)
+		}
+	}
+}
+
+func TestReportsAreBounded(t *testing.T) {
+	ctx := context.Background()
+	clock := newClock()
+	s, _ := openTemp(t, clock)
+	s.maxReports = 3
+
+	for i := 1; i <= 5; i++ {
+		clock.advance(time.Second)
+		if err := s.PutReport(ctx, int64(i), "abc1234", []byte("r")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var n int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM reports").Scan(&n); err != nil || n != 3 {
+		t.Fatalf("rows = %d, %v; want 3", n, err)
+	}
+	// The two oldest went; the three newest stayed.
+	for i, wantFound := range map[int64]bool{1: false, 2: false, 3: true, 4: true, 5: true} {
+		_, err := s.GetReport(ctx, i, "abc1234")
+		if found := err == nil; found != wantFound {
+			t.Errorf("repo %d found = %v, want %v", i, found, wantFound)
+		}
+	}
+}
+
+func TestReportBinaryContentIsPreserved(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTemp(t, newClock())
+	data := []byte{0x00, 0xff, 0x10, '\n', '"', 0x00}
+	if err := s.PutReport(ctx, 1, "abc1234", data); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetReport(ctx, 1, "abc1234"); string(got) != string(data) {
+		t.Errorf("content changed: %v", got)
+	}
+}
