@@ -24,7 +24,7 @@ See [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 
 ## Requirements
 
-- Go 1.27.2 or later
+- Go 1.27.3 or later
 - `git` available at runtime (included in the Docker image)
 - A Gitea server, an OpenAI-compatible LLM endpoint, and optionally SonarQube and Trivy
 

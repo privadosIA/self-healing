@@ -60,7 +60,7 @@ A failing pipeline on a fix branch triggers another fix, or a noisy repository p
 
 ## Other considerations
 
-- **Server-side request forgery:** outbound hosts are validated against `HEALER_ALLOWED_HOSTS` at startup, and the HTTP clients re-check the resolved address when connecting. An empty allowlist prevents startup.
+- **Server-side request forgery:** outbound hosts are validated against `HEALER_ALLOWED_HOSTS` at startup, and the HTTP clients re-check the destination host on every connection, including redirects, and ignore proxy environment variables. An empty allowlist prevents startup.
 - **Secret leakage:** secrets come from the environment or files, are held in a type that prints as `[redacted]`, and credential-like log attributes are redacted by name.
 - **Code sent to the LLM:** the endpoint is operator-configured and must pass the allowlist. Use a local or otherwise trusted model server.
 - **Supply chain:** dependencies are kept minimal, `go.sum` is committed, and CI runs `govulncheck` and `gosec`.

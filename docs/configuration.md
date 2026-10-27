@@ -33,7 +33,7 @@ The daemon refuses to start if this list is empty, or if the host of `HEALER_GIT
 
 - A suffix such as `example.com` matches `example.com` and any subdomain (`gitea.example.com`), but not `evilexample.com`.
 - A CIDR or single IP such as `10.0.0.0/8` or `192.0.2.7` matches endpoints given as IP addresses.
-- Hostnames are matched against suffixes only. The HTTP clients also check the resolved address against the CIDRs when connecting.
+- Hostnames are matched against suffixes only. The HTTP clients apply the same rules to every connection they open, so a redirect to a host outside the list is refused. They also ignore the `HTTP_PROXY` and `HTTPS_PROXY` variables, because a proxy would hide the real destination.
 
 ### Gitea
 
