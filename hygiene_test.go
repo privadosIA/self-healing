@@ -122,7 +122,8 @@ func placeholder(v string) bool {
 func placeholderDomain(d string) bool {
 	d = strings.ToLower(d)
 	return d == "example.com" || d == "example.org" || strings.HasSuffix(d, ".example.com") ||
-		strings.HasSuffix(d, ".invalid") || strings.HasSuffix(d, ".test") || d == "users.noreply.invalid"
+		strings.HasSuffix(d, ".invalid") || strings.HasSuffix(d, ".test") || d == "users.noreply.invalid" ||
+		d == "anthropic.com" // the address of the Co-Authored-By trailer on commits made with Claude Code
 }
 
 // --- the detector itself ------------------------------------------------------
@@ -168,6 +169,7 @@ func TestTheDetectorWorks(t *testing.T) {
 		"a variable reference":    "HEALER_REPORTS_TOKEN=${HEALER_REPORTS_TOKEN}",
 		"an Actions secret":       "token: ${{ secrets.HEALER_REPORTS_TOKEN }}",
 		"a placeholder email":     "ci-healer-bot@users.noreply.invalid and t@example.com",
+		"the co-author trailer":   "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>",
 		"a module version":        "honnef.co/go/tools/cmd/staticcheck@v0.8.2",
 		"the container home":      "--home-dir /home/healer",
 		"a state directory":       "/var/lib/healerd/healerd.db",
