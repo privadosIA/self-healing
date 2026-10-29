@@ -9,8 +9,8 @@ A self-hosted Go daemon that turns failed CI pipelines into pull requests. It li
 1. Gitea sends a `workflow_job` (or `status`) webhook when a pipeline fails.
 2. `healerd` verifies the HMAC signature, drops duplicates and ignores events from `auto-fix/*` branches.
 3. It fetches the findings for the failing commit from SonarQube, or from a Trivy report that your CI uploads.
-4. It picks one finding and sends the LLM a small snippet around it, never the whole repository.
-5. It validates the returned diff: it must apply cleanly, touch exactly one file (the finding's), and stay under 200 lines.
+4. It picks one finding and sends the LLM a small snippet around it, never the whole repository. The model answers with the lines to replace and their new text, not with a diff.
+5. It checks that the lines lie inside the snippet it sent, builds the diff itself, and verifies that it applies cleanly, touches exactly one file (the finding's) and stays under 200 lines.
 6. It pushes a branch and opens a pull request with the finding, before and after, and a "reviewed by a human" checklist. **It never merges.**
 
 ## Safety by design
@@ -43,8 +43,11 @@ Then connect it to Gitea and your pipelines:
 1. [Connecting Gitea](docs/gitea-webhook-setup.md): the bot account, the webhook and the settings that must agree.
 2. [CI integration](docs/ci-integration.md): how to publish Trivy reports and what SonarQube needs.
 3. [Configuration](docs/configuration.md): every `HEALER_*` variable.
+4. [Deployment](docs/deployment.md): Docker Compose on a machine of its own, networking, a remote model, upgrades and backups.
 
 ## Deployment
+
+`healerd` is a service that must stay up to see Gitea's webhooks. [Deployment](docs/deployment.md) explains how to run it on a machine of its own with Docker, what must reach what, and how to run it next to Gitea.
 
 - [`deploy/healerd.service`](deploy/healerd.service): a hardened systemd unit.
 - [`deploy/docker-compose.example.yml`](deploy/docker-compose.example.yml): Docker Compose with a read-only root filesystem and the port on loopback only.

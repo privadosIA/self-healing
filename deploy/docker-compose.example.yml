@@ -1,7 +1,10 @@
 # Example Docker Compose file for healerd. Copy it and adjust; every host below
-# is a placeholder.
+# is a placeholder. docs/deployment.md walks through running it on a machine of
+# its own: which networks must reach which port, a reverse proxy, a remote
+# model, upgrades and backups.
 #
 #   cp .env.example deploy/.env      # then edit: the secrets live there
+#   chmod 600 deploy/.env
 #   docker compose -f deploy/docker-compose.example.yml up -d --build
 #
 # healerd speaks plain HTTP: put a TLS-terminating reverse proxy in front of it
@@ -15,7 +18,10 @@ services:
     restart: unless-stopped
 
     # Bound to loopback on purpose; the reverse proxy forwards /webhook (and
-    # /reports if you use Trivy) to it.
+    # /reports if you use Trivy) to it. Without a proxy on this machine, publish
+    # on the address of the network that Gitea and your runners share instead,
+    # and never on 0.0.0.0 (see "Reaching the daemon" in docs/deployment.md):
+    #   - "192.0.2.10:8080:8080"
     ports:
       - "127.0.0.1:8080:8080"
 
@@ -25,6 +31,8 @@ services:
     environment:
       HEALER_LISTEN_ADDR: ":8080"
       HEALER_DB_PATH: /data/healerd.db
+      # Domain suffixes and CIDRs the daemon may contact: Gitea, the model and,
+      # if used, SonarQube. Nothing else is reachable.
       HEALER_ALLOWED_HOSTS: example.com
       HEALER_GITEA_URL: https://gitea.example.com
       HEALER_SONAR_URL: https://sonar.example.com
