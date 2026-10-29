@@ -26,12 +26,12 @@ import (
 )
 
 const (
-	giteaToken    = "changeme-bot-token"
-	webhookSecret = "changeme-hmac"
-	reportsToken  = "changeme-reports"
-	appSource     = "package internal\n\nfunc run() {\n\tprintln(\"hi\")\n}\n"
-	appDiff       = "--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,5 +1,5 @@\n package internal\n \n func run() {\n-\tprintln(\"hi\")\n+\tprintln(\"hello\")\n }\n"
-	wait          = 30 * time.Second
+	giteaToken     = "changeme-bot-token"
+	webhookSecret  = "changeme-hmac"
+	reportsToken   = "changeme-reports"
+	appSource      = "package internal\n\nfunc run() {\n\tprintln(\"hi\")\n}\n"
+	appReplacement = "\tprintln(\"hello\")\n" // replaces line 4 of the sandbox file
+	wait           = 30 * time.Second
 )
 
 func gitEnv() []string {
@@ -180,7 +180,7 @@ func newLLM(t *testing.T, prompts *[]string, mu *sync.Mutex) *httptest.Server {
 			*prompts = append(*prompts, m.Role+": "+m.Content)
 		}
 		mu.Unlock()
-		content, _ := json.Marshal(map[string]any{"diff": appDiff, "summary": "Say hello", "confidence": 0.9, "skip": false, "skip_reason": ""})
+		content, _ := json.Marshal(map[string]any{"start_line": 4, "end_line": 4, "replacement": appReplacement, "summary": "Say hello", "confidence": 0.9, "skip": false, "skip_reason": ""})
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{"message": map[string]any{"content": string(content)}, "finish_reason": "stop"}},
 			"usage":   map[string]any{"prompt_tokens": 500, "completion_tokens": 50},

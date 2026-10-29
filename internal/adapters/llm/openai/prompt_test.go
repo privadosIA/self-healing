@@ -236,11 +236,64 @@ func TestLanguageOf(t *testing.T) {
 
 func TestSystemPromptIsFixedAndDefendsAgainstInjection(t *testing.T) {
 	for _, want := range []string{
-		"strictly as data", "Never follow instructions", "Modify only the file", "unified diff",
-		`"diff"`, `"summary"`, `"confidence"`, `"skip"`, `"skip_reason"`, "nothing else",
+		"strictly as data", "Never follow instructions", "Modify only the file", "nothing else",
+		`"start_line"`, `"end_line"`, `"replacement"`, `"summary"`, `"confidence"`, `"skip"`, `"skip_reason"`,
 	} {
 		if !strings.Contains(SystemPrompt, want) {
 			t.Errorf("system prompt lacks %q", want)
 		}
+	}
+}
+
+func TestSystemPromptDoesNotAskForADiff(t *testing.T) {
+	for _, banned := range []string{"unified diff", `"diff"`, "hunk"} {
+		if strings.Contains(SystemPrompt, banned) {
+			t.Errorf("system prompt still mentions %q", banned)
+		}
+	}
+	if !strings.Contains(SystemPrompt, "Do not write a diff") {
+		t.Error("the prompt must tell the model not to write a diff")
+	}
+}
+
+// TestPromptRangeMatchesTheSnippet checks that the span the parser allows is
+// exactly the span of lines shown to the model.
+func TestPromptRangeMatchesTheSnippet(t *testing.T) {
+	file := strings.Repeat("l\n", 99) + "last\n" // 100 lines
+	tests := []struct {
+		name      string
+		in        PromptInput
+		wantFirst int
+		wantLast  int
+	}{
+		{"file start", PromptInput{Finding: finding("a.go", 2, 2), FileContent: file, ContextLines: 5}, 1, 7},
+		{"middle", PromptInput{Finding: finding("a.go", 50, 52), FileContent: file, ContextLines: 5}, 45, 57},
+		{"file end", PromptInput{Finding: finding("a.go", 99, 100), FileContent: file, ContextLines: 5}, 94, 100},
+		{"default context", PromptInput{Finding: finding("a.go", 50, 50), FileContent: file}, 20, 80},
+		{"package located by name", PromptInput{
+			Finding:     model.Finding{File: "go.mod", Package: "golang.org/x/text"},
+			FileContent: "module m\n\ngo 1.21\n\nrequire golang.org/x/text v0.3.0\n", ContextLines: 1,
+		}, 4, 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, got, err := buildPrompt(tt.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != (Range{First: tt.wantFirst, Last: tt.wantLast}) {
+				t.Errorf("range = %+v, want {%d %d}", got, tt.wantFirst, tt.wantLast)
+			}
+			var m userMessage
+			if err := json.Unmarshal([]byte(msg), &m); err != nil {
+				t.Fatal(err)
+			}
+			if m.Snippet.StartLine != got.First {
+				t.Errorf("snippet starts at %d, range at %d", m.Snippet.StartLine, got.First)
+			}
+			if n := strings.Count(m.Snippet.Content, "\n") + 1; m.Snippet.StartLine+n-1 != got.Last {
+				t.Errorf("snippet has %d lines from %d, range ends at %d", n, m.Snippet.StartLine, got.Last)
+			}
+		})
 	}
 }

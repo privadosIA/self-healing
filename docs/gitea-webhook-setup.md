@@ -133,7 +133,7 @@ Use *Test Delivery* on the webhook. That sends a push event, which `healerd` ign
 | skipped | No finding to fix: the scanners reported nothing, or everything matches `HEALER_EXCLUDE_GLOBS`. For Trivy, the report was not uploaded before the webhook arrived (see [ci-integration.md](ci-integration.md)). |
 | skipped | The fix branch for this rule and commit already exists. |
 | skipped | The model declined, was not confident enough (below 0.6), or answered in a way that could not be used. |
-| skipped | The patch does not apply, changes more than the finding's file, or is longer than 200 lines. |
+| skipped | The model named lines outside the snippet it was given, replaced them with identical text, or the resulting patch does not apply or is longer than 200 lines. |
 | failed | A scanner, Gitea, git or the model endpoint could not be reached, or returned an error. |
 | failed | The job ran longer than `HEALER_JOB_TIMEOUT`, or the daemon was restarted while it ran. |
 

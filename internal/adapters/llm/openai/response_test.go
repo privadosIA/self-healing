@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,71 +16,75 @@ import (
 	"github.com/privadosIA/self-healing/internal/ports"
 )
 
-const goodDiff = `--- a/internal/app.go
-+++ b/internal/app.go
-@@ -1,5 +1,5 @@
- package internal
+// fixSource is the file the tests ask to fix; the finding is on line 4.
+const fixSource = "package internal\n\nfunc run() {\n\tprintln(\"hi\")\n}\n"
 
- func run() {
--	println("hi")
-+	println("hello")
- }
-`
+// goodReplacement replaces line 4 of fixSource.
+const goodReplacement = "\tprintln(\"hello\")\n"
 
-var target = model.Finding{File: "internal/app.go", RuleID: "go:S1234", LineStart: 4, LineEnd: 4}
+// goodDiff is the diff healerd builds for goodReplacement.
+const goodDiff = "--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,5 +1,5 @@\n package internal\n \n func run() {\n-\tprintln(\"hi\")\n+\tprintln(\"hello\")\n }\n"
 
-func respond(diff string, confidence float64, skip bool) string {
-	b, _ := json.Marshal(map[string]any{"diff": diff, "summary": "Replace hi with hello", "confidence": confidence, "skip": skip, "skip_reason": ""})
+var (
+	target = model.Finding{File: "internal/app.go", RuleID: "go:S1234", LineStart: 4, LineEnd: 4}
+	// shown is the whole of fixSource, as the model sees it.
+	shown = Range{First: 1, Last: 5}
+)
+
+func reply(start, end int, replacement string, confidence float64, skip bool) string {
+	b, _ := json.Marshal(map[string]any{
+		"start_line": start, "end_line": end, "replacement": replacement,
+		"summary": "Replace hi with hello", "confidence": confidence, "skip": skip, "skip_reason": "",
+	})
 	return string(b)
+}
+
+func good(confidence float64) string { return reply(4, 4, goodReplacement, confidence, false) }
+
+func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+func parse(content string) (ports.Proposal, error) {
+	return ParseResponse(content, target, fixSource, shown)
 }
 
 func TestParseResponseAccepts(t *testing.T) {
 	tests := []struct {
-		name    string
-		content string
+		name     string
+		content  string
+		wantDiff string // empty means goodDiff
 	}{
-		{"plain object", respond(goodDiff, 0.9, false)},
-		{"exactly the minimum confidence", respond(goodDiff, 0.6, false)},
-		{"leading and trailing whitespace", "\n  " + respond(goodDiff, 0.9, false) + "\n"},
-		{"wrapped in a json code fence", "```json\n" + respond(goodDiff, 0.9, false) + "\n```"},
-		{"wrapped in a bare code fence", "```\n" + respond(goodDiff, 0.9, false) + "\n```\n"},
-		{"git style headers", respond("diff --git a/internal/app.go b/internal/app.go\nindex 1111111..2222222 100644\n"+goodDiff, 0.9, false)},
-		{"timestamps after the path", respond(strings.Replace(strings.Replace(goodDiff, "--- a/internal/app.go", "--- a/internal/app.go\t2026-01-01 00:00:00", 1), "+++ b/internal/app.go", "+++ b/internal/app.go\t2026-01-01 00:00:01", 1), 0.9, false)},
-		{"two hunks", respond(`--- a/internal/app.go
-+++ b/internal/app.go
-@@ -1,3 +1,3 @@
- package internal
--
-+// x
- func a() {}
-@@ -10,2 +10,2 @@
--old
-+new
- end
-`, 0.9, false)},
-		{"no newline marker", respond(strings.Replace(goodDiff, " }\n", " }\n\\ No newline at end of file\n", 1), 0.9, false)},
-		{"stripped blank context line", respond(strings.Replace(goodDiff, " package internal\n \n", " package internal\n\n", 1), 0.9, false)},
-		{"single-line hunk header", respond("--- a/internal/app.go\n+++ b/internal/app.go\n@@ -5 +5 @@\n-old\n+new\n", 0.9, false)},
-		{"removed line that looks like a header", respond("--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,2 +1,1 @@\n--- a SQL comment\n keep\n", 0.9, false)},
-		{"unknown extra fields are ignored", `{"diff":` + quote(goodDiff) + `,"summary":"s","confidence":0.9,"skip":false,"skip_reason":"","extra":1}`},
+		{"plain object", good(0.9), ""},
+		{"exactly the minimum confidence", good(0.6), ""},
+		{"leading and trailing whitespace", "\n  " + good(0.9) + "\n", ""},
+		{"wrapped in a json code fence", "```json\n" + good(0.9) + "\n```", ""},
+		{"wrapped in a bare code fence", "```\n" + good(0.9) + "\n```\n", ""},
+		{"replacement without a trailing newline", reply(4, 4, strings.TrimSuffix(goodReplacement, "\n"), 0.9, false), ""},
+		{"unchanged lines are given back too", reply(3, 5, "func run() {\n\tprintln(\"hello\")\n}\n", 0.9, false), ""},
+		{"unknown extra fields are ignored", `{"start_line":4,"end_line":4,"replacement":` + quote(goodReplacement) + `,"summary":"s","confidence":0.9,"skip":false,"skip_reason":"","extra":1}`, ""},
+		{"an empty replacement deletes the lines", reply(4, 4, "", 0.9, false),
+			"--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,5 +1,4 @@\n package internal\n \n func run() {\n-\tprintln(\"hi\")\n }\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := ParseResponse(tt.content, target)
+			p, err := parse(tt.content)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if p.Diff == "" || p.Summary == "" || p.Confidence < ports.MinConfidence {
+			want := tt.wantDiff
+			if want == "" {
+				want = goodDiff
+			}
+			if p.Diff != want {
+				t.Errorf("diff =\n%q\nwant\n%q", p.Diff, want)
+			}
+			if p.Summary == "" || p.Confidence < ports.MinConfidence {
 				t.Errorf("proposal = %+v", p)
 			}
 		})
 	}
 }
 
-func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
-
 func TestParseResponseRejects(t *testing.T) {
-	long := "--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,300 +1,300 @@\n" + strings.Repeat("-x\n+y\n", 150)
 	tests := []struct {
 		name    string
 		content string
@@ -91,41 +93,34 @@ func TestParseResponseRejects(t *testing.T) {
 		{"not json", "Sure! Here is the fix:", "not valid JSON"},
 		{"empty", "", "not valid JSON"},
 		{"json array", `[1,2]`, "not valid JSON"},
-		{"trailing content", respond(goodDiff, 0.9, false) + " thanks!", "after the JSON"},
-		{"two objects", respond(goodDiff, 0.9, false) + respond(goodDiff, 0.9, false), "after the JSON"},
-		{"model skips", respond(goodDiff, 0.99, true), "declined"},
-		{"confidence below the minimum", respond(goodDiff, 0.59, false), "below"},
-		{"confidence zero", respond(goodDiff, 0, false), "below"},
-		{"confidence above one", respond(goodDiff, 1.5, false), "out of range"},
-		{"confidence negative", respond(goodDiff, -0.1, false), "out of range"},
-		{"confidence missing", `{"diff":` + quote(goodDiff) + `,"summary":"s","skip":false}`, "missing"},
-		{"empty diff", respond("", 0.9, false), "empty"},
-		{"blank diff", respond("  \n", 0.9, false), "empty"},
-		{"prose instead of a diff", respond("I changed the print call.", 0.9, false), "file headers"},
-		{"another file", respond(strings.ReplaceAll(goodDiff, "internal/app.go", "internal/other.go"), 0.9, false), "finding's file"},
-		{"path traversal", respond(strings.ReplaceAll(goodDiff, "internal/app.go", "../etc/passwd"), 0.9, false), "finding's file"},
-		{"absolute path", respond(strings.ReplaceAll(goodDiff, "a/internal/app.go", "/internal/app.go"), 0.9, false), "finding's file"},
-		{"missing a/ b/ prefixes", respond(strings.ReplaceAll(goodDiff, "a/internal", "internal"), 0.9, false), "finding's file"},
-		{"old and new paths differ", respond(strings.Replace(goodDiff, "+++ b/internal/app.go", "+++ b/internal/moved.go", 1), 0.9, false), "finding's file"},
-		{"git header names another file", respond("diff --git a/x.go b/x.go\n"+goodDiff, 0.9, false), "finding's file"},
-		{"two files", respond(goodDiff+"--- a/other.go\n+++ b/other.go\n@@ -1 +1 @@\n-a\n+b\n", 0.9, false), "more than one file"},
-		{"two files with git headers", respond(goodDiff+"diff --git a/other.go b/other.go\n--- a/other.go\n+++ b/other.go\n@@ -1 +1 @@\n-a\n+b\n", 0.9, false), "more than one file"},
-		{"file creation", respond("--- /dev/null\n+++ b/internal/app.go\n@@ -0,0 +1 @@\n+x\n", 0.9, false), "finding's file"},
-		{"file deletion", respond("--- a/internal/app.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n", 0.9, false), "finding's file"},
-		{"rename", respond("diff --git a/internal/app.go b/internal/app.go\nsimilarity index 90%\nrename from internal/app.go\nrename to internal/new.go\n", 0.9, false), "file headers"},
-		{"mode change", respond("diff --git a/internal/app.go b/internal/app.go\nold mode 100644\nnew mode 100755\n", 0.9, false), "file headers"},
-		{"binary patch", respond("diff --git a/internal/app.go b/internal/app.go\nGIT binary patch\nliteral 0\n", 0.9, false), "file headers"},
-		{"headers without a hunk", respond("--- a/internal/app.go\n+++ b/internal/app.go\n", 0.9, false), "no hunks"},
-		{"hunk shorter than declared", respond("--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,5 +1,5 @@\n-a\n+b\n", 0.9, false), "shorter"},
-		{"hunk longer than declared", respond("--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1 +1 @@\n-a\n+b\n+c\n", 0.9, false), "unexpected content"},
-		{"malformed line in a hunk", respond("--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,2 +1,2 @@\n-a\n*b\n", 0.9, false), "malformed"},
-		{"trailing prose after the diff", respond(goodDiff+"Hope that helps!\n", 0.9, false), "unexpected content"},
-		{"context only", respond("--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1 +1 @@\n a\n", 0.9, false), "changes nothing"},
-		{"more than 200 lines", respond(long, 0.9, false), "limit"},
+		{"trailing content", good(0.9) + " thanks!", "after the JSON"},
+		{"two objects", good(0.9) + good(0.9), "after the JSON"},
+		{"model skips", reply(4, 4, goodReplacement, 0.99, true), "declined"},
+		{"confidence below the minimum", good(0.59), "below"},
+		{"confidence zero", good(0), "below"},
+		{"confidence above one", good(1.5), "out of range"},
+		{"confidence negative", good(-0.1), "out of range"},
+		{"confidence missing", `{"start_line":4,"end_line":4,"replacement":` + quote(goodReplacement) + `,"summary":"s","skip":false}`, "missing"},
+		{"the old format with a diff", `{"diff":` + quote(goodDiff) + `,"summary":"s","confidence":0.9,"skip":false,"skip_reason":""}`, "does not give the lines"},
+		{"start_line missing", `{"end_line":4,"replacement":"x","summary":"s","confidence":0.9}`, "does not give the lines"},
+		{"end_line missing", `{"start_line":4,"replacement":"x","summary":"s","confidence":0.9}`, "does not give the lines"},
+		{"replacement missing", `{"start_line":4,"end_line":4,"summary":"s","confidence":0.9}`, "does not give the lines"},
+		{"replacement null", `{"start_line":4,"end_line":4,"replacement":null,"summary":"s","confidence":0.9}`, "does not give the lines"},
+		{"line number with a fraction", `{"start_line":4.5,"end_line":4,"replacement":"x","summary":"s","confidence":0.9}`, "not valid JSON"},
+		{"line number as text", `{"start_line":"4","end_line":4,"replacement":"x","summary":"s","confidence":0.9}`, "not valid JSON"},
+		{"replacement is not text", `{"start_line":4,"end_line":4,"replacement":["x"],"summary":"s","confidence":0.9}`, "not valid JSON"},
+		{"end before start", reply(5, 4, goodReplacement, 0.9, false), "outside the lines"},
+		{"start before the snippet", reply(0, 4, goodReplacement, 0.9, false), "outside the lines"},
+		{"negative start", reply(-3, 4, goodReplacement, 0.9, false), "outside the lines"},
+		{"end after the snippet", reply(4, 6, goodReplacement, 0.9, false), "outside the lines"},
+		{"far outside the file", reply(900, 901, goodReplacement, 0.9, false), "outside the lines"},
+		{"nothing changes", reply(4, 4, "\tprintln(\"hi\")\n", 0.9, false), "changes nothing"},
+		{"the whole file is deleted", reply(1, 5, "", 0.9, false), "empty"},
+		{"too long", reply(4, 4, strings.Repeat("x\n", 300), 0.9, false), "limit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseResponse(tt.content, target)
+			_, err := parse(tt.content)
 			if err == nil {
 				t.Fatal("expected a rejection")
 			}
@@ -139,19 +134,36 @@ func TestParseResponseRejects(t *testing.T) {
 	}
 }
 
-func TestDiffLineLimitIsExact(t *testing.T) {
-	body := func(pairs int) string {
-		return fmt.Sprintf("--- a/internal/app.go\n+++ b/internal/app.go\n@@ -1,%d +1,%d @@\n", pairs, pairs) + strings.Repeat(" c\n", pairs-1) + "-z\n+w\n"
+// TestRangeIsLimitedToWhatTheModelWasShown uses a narrower snippet than the
+// file: lines outside it exist, but were never shown, so they cannot change.
+func TestRangeIsLimitedToWhatTheModelWasShown(t *testing.T) {
+	file := "a\nb\nc\nd\ne\nf\ng\n"
+	narrow := Range{First: 3, Last: 5}
+	f := model.Finding{File: "x.txt", RuleID: "r", LineStart: 4}
+	for _, tt := range []struct {
+		start, end int
+		ok         bool
+	}{{3, 5, true}, {4, 4, true}, {2, 4, false}, {4, 6, false}, {1, 7, false}} {
+		_, err := ParseResponse(reply(tt.start, tt.end, "X\n", 0.9, false), f, file, narrow)
+		if (err == nil) != tt.ok {
+			t.Errorf("range %d-%d: err = %v, want ok = %v", tt.start, tt.end, err, tt.ok)
+		}
 	}
-	// 3 header lines + (n-1) context + 2 changes: n = 196 gives exactly 200 lines.
-	atLimit, over := body(196), body(197)
-	if n := len(strings.Split(strings.TrimSuffix(atLimit, "\n"), "\n")); n != ports.MaxDiffLines {
-		t.Fatalf("test diff has %d lines, want %d", n, ports.MaxDiffLines)
+}
+
+func TestDiffLineLimitIsExactThroughParseResponse(t *testing.T) {
+	fits := func(n int) bool {
+		_, err := parse(reply(4, 4, strings.Repeat("x\n", n), 0.9, false))
+		return err == nil
 	}
-	if _, err := ParseResponse(respond(atLimit, 0.9, false), target); err != nil {
-		t.Errorf("a diff at the limit was rejected: %v", err)
+	n := 1
+	for fits(n + 1) {
+		n++
 	}
-	if _, err := ParseResponse(respond(over, 0.9, false), target); !errors.Is(err, ports.ErrNoProposal) {
+	if n < 150 || n > 200 {
+		t.Fatalf("the largest replacement that fits is %d lines", n)
+	}
+	if _, err := parse(reply(4, 4, strings.Repeat("x\n", n+1), 0.9, false)); !errors.Is(err, ports.ErrNoProposal) {
 		t.Errorf("a diff over the limit was accepted: %v", err)
 	}
 }
@@ -160,18 +172,25 @@ func TestErrorsNeverRepeatModelOutput(t *testing.T) {
 	marker := "SECRET-FROM-THE-MODEL-OR-REPO"
 	for _, content := range []string{
 		marker,
-		respond(strings.ReplaceAll(goodDiff, "internal/app.go", marker), 0.9, false),
-		respond(goodDiff+marker+"\n", 0.9, false),
-		`{"diff":"x","summary":"` + marker + `","confidence":0.1,"skip":false,"skip_reason":"` + marker + `"}`,
-		respond(goodDiff, 0.9, true),
+		reply(4, 4, marker, 0.9, true),
+		reply(900, 901, marker, 0.9, false),
+		reply(1, 5, "", 0.9, false),
+		reply(4, 4, strings.Repeat(marker+"\n", 300), 0.9, false),
+		`{"start_line":4,"end_line":4,"replacement":"x","summary":"` + marker + `","confidence":0.1,"skip":false,"skip_reason":"` + marker + `"}`,
+		`{"diff":"` + marker + `","summary":"s","confidence":0.9}`,
 	} {
-		_, err := ParseResponse(content, target)
+		_, err := parse(content)
 		if err == nil {
-			t.Fatalf("expected an error for %q", content)
+			t.Fatalf("expected an error for %.40q", content)
 		}
 		if strings.Contains(err.Error(), marker) {
 			t.Errorf("error repeats the model output: %v", err)
 		}
+	}
+	// The file's own text is just as untrusted as the model's.
+	_, err := ParseResponse(reply(1, 1, marker+"\n", 0.9, false), target, marker+"\n", Range{1, 1})
+	if err == nil || strings.Contains(err.Error(), marker) {
+		t.Errorf("err = %v: an unchanged line must be refused without repeating it", err)
 	}
 }
 
@@ -187,8 +206,8 @@ func TestSummaryIsSanitized(t *testing.T) {
 		{long, strings.Repeat("é", maxSummaryRunes)},
 	}
 	for _, tt := range tests {
-		content := `{"diff":` + quote(goodDiff) + `,"summary":` + quote(tt.in) + `,"confidence":0.9,"skip":false,"skip_reason":""}`
-		p, err := ParseResponse(content, target)
+		content := `{"start_line":4,"end_line":4,"replacement":` + quote(goodReplacement) + `,"summary":` + quote(tt.in) + `,"confidence":0.9,"skip":false,"skip_reason":""}`
+		p, err := parse(content)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -200,21 +219,18 @@ func TestSummaryIsSanitized(t *testing.T) {
 
 // TestAcceptedDiffAppliesToARealTree checks the full chain the daemon relies
 // on: a response that passes ParseResponse is also accepted by git apply
-// --check, and one that passes the shape checks but not the content is not.
+// --check, and one built from a file that is not the one in the tree is not.
 func TestAcceptedDiffAppliesToARealTree(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
+	requireGit(t)
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	src := "package internal\n\nfunc run() {\n\tprintln(\"hi\")\n}\n"
-	if err := os.WriteFile(filepath.Join(dir, "internal", "app.go"), []byte(src), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "internal", "app.go"), []byte(fixSource), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	p, err := ParseResponse(respond(goodDiff, 0.9, false), target)
+	p, err := parse(good(0.9))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,18 +238,14 @@ func TestAcceptedDiffAppliesToARealTree(t *testing.T) {
 		t.Errorf("a valid proposal does not apply: %v", err)
 	}
 
-	stale := strings.Replace(goodDiff, `-	println("hi")`, `-	println("not there")`, 1)
-	p, err = ParseResponse(respond(stale, 0.9, false), target)
-	if err != nil {
-		t.Fatalf("the shape of a stale diff is valid: %v", err)
+	changed := strings.Replace(fixSource, `println("hi")`, `println("changed since")`, 1)
+	if err := os.WriteFile(filepath.Join(dir, "internal", "app.go"), []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	if err := gitcli.ApplyCheck(context.Background(), dir, p.Diff); err == nil {
-		t.Error("a diff against content that is not in the file must not apply")
+		t.Error("a diff built from different content than the tree's must not apply")
 	}
 }
-
-// fixSource is the file the Propose tests ask to fix.
-const fixSource = "package internal\n\nfunc run() {\n\tprintln(\"hi\")\n}\n"
 
 func proposeRequest() ports.FixRequest {
 	return ports.FixRequest{Finding: target, FileContent: fixSource}
@@ -241,7 +253,7 @@ func proposeRequest() ports.FixRequest {
 
 func TestProposeEndToEnd(t *testing.T) {
 	var cap captured
-	srv := newServer(t, &cap, okHandler(respond(goodDiff, 0.85, false)))
+	srv := newServer(t, &cap, okHandler(good(0.85)))
 	c := newClient(t, srv.URL+"/v1", testKey, 2*time.Second)
 
 	p, err := c.Propose(context.Background(), proposeRequest())
@@ -267,13 +279,13 @@ func TestProposeMapsUnusableAnswersToErrNoProposal(t *testing.T) {
 		handler func(http.ResponseWriter, *http.Request)
 		req     func() ports.FixRequest
 	}{
-		{"model skips", okHandler(respond(goodDiff, 0.9, true)), proposeRequest},
-		{"low confidence", okHandler(respond(goodDiff, 0.2, false)), proposeRequest},
+		{"model skips", okHandler(reply(4, 4, goodReplacement, 0.9, true)), proposeRequest},
+		{"low confidence", okHandler(good(0.2)), proposeRequest},
 		{"not json", okHandler("sorry, no"), proposeRequest},
 		{"response cut by the token limit", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{"},"finish_reason":"length"}]}`))
 		}, proposeRequest},
-		{"finding not in the file", okHandler(respond(goodDiff, 0.9, false)), func() ports.FixRequest {
+		{"finding not in the file", okHandler(good(0.9)), func() ports.FixRequest {
 			r := proposeRequest()
 			r.Finding.LineStart, r.Finding.LineEnd = 99, 99
 			return r
@@ -293,7 +305,7 @@ func TestProposeMapsUnusableAnswersToErrNoProposal(t *testing.T) {
 
 func TestProposeDoesNotCallTheModelForAnUnlocatableFinding(t *testing.T) {
 	var cap captured
-	srv := newServer(t, &cap, okHandler(respond(goodDiff, 0.9, false)))
+	srv := newServer(t, &cap, okHandler(good(0.9)))
 	req := proposeRequest()
 	req.Finding.LineStart, req.Finding.LineEnd = 99, 99
 	_, _ = newClient(t, srv.URL+"/v1", "", 2*time.Second).Propose(context.Background(), req)

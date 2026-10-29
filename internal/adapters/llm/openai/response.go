@@ -22,7 +22,7 @@ var _ ports.LLM = (*Client)(nil)
 // Propose builds the prompt for req, calls the model and validates the answer.
 // Anything unusable comes back wrapping ports.ErrNoProposal.
 func (c *Client) Propose(ctx context.Context, req ports.FixRequest) (ports.Proposal, error) {
-	msg, err := BuildUserMessage(PromptInput{
+	msg, shown, err := buildPrompt(PromptInput{
 		Finding: req.Finding, FileContent: req.FileContent, ContextLines: req.ContextLines, BuildCmd: req.BuildCmd,
 	})
 	if err != nil {
@@ -38,7 +38,7 @@ func (c *Client) Propose(ctx context.Context, req ports.FixRequest) (ports.Propo
 		}
 		return ports.Proposal{}, err
 	}
-	p, err := ParseResponse(done.Content, req.Finding)
+	p, err := ParseResponse(done.Content, req.Finding, req.FileContent, shown)
 	if err != nil {
 		return ports.Proposal{}, err
 	}
@@ -46,24 +46,35 @@ func (c *Client) Propose(ctx context.Context, req ports.FixRequest) (ports.Propo
 	return p, nil
 }
 
+// rawResponse is the model's answer. The line numbers and the replacement are
+// pointers so that a missing field differs from a zero value: an empty
+// replacement deletes the lines, a missing one is an unusable answer.
 type rawResponse struct {
-	Diff       string   `json:"diff"`
-	Summary    string   `json:"summary"`
-	Confidence *float64 `json:"confidence"`
-	Skip       bool     `json:"skip"`
-	SkipReason string   `json:"skip_reason"`
+	StartLine   *int     `json:"start_line"`
+	EndLine     *int     `json:"end_line"`
+	Replacement *string  `json:"replacement"`
+	Summary     string   `json:"summary"`
+	Confidence  *float64 `json:"confidence"`
+	Skip        bool     `json:"skip"`
+	SkipReason  string   `json:"skip_reason"`
 }
 
 // ParseResponse checks the model's answer against the finding it was asked to
-// fix. The answer is untrusted, so the result is only a proposal: the diff must
-// still pass `git apply --check` against the working tree.
+// fix and turns it into a proposal. The answer is untrusted: it only chooses a
+// range of lines and their new text, and the unified diff is built here from
+// the file at the failing commit. The diff must still pass `git apply --check`
+// against the working tree.
+//
+// shown is the span of file lines the model was given; a range outside it is
+// refused, so the model can only edit what it saw. file is the finding's file
+// content.
 //
 // It returns an error wrapping ports.ErrNoProposal when the model declined,
-// was not confident enough, did not answer in the required format, or proposed
-// a patch that breaks a rule: it must be a plain unified diff for exactly one
-// file, the finding's, within ports.MaxDiffLines. The error text never repeats
-// the model's output.
-func ParseResponse(content string, f model.Finding) (ports.Proposal, error) {
+// was not confident enough, did not answer in the required format, or asked
+// for a change that breaks a rule: it must replace lines of the finding's file
+// that were shown, change something, and fit within ports.MaxDiffLines. The
+// error text never repeats the model's output.
+func ParseResponse(content string, f model.Finding, file string, shown Range) (ports.Proposal, error) {
 	var raw rawResponse
 	dec := json.NewDecoder(strings.NewReader(stripFences(content)))
 	if err := dec.Decode(&raw); err != nil {
@@ -82,7 +93,14 @@ func ParseResponse(content string, f model.Finding) (ports.Proposal, error) {
 	if *raw.Confidence < ports.MinConfidence {
 		return ports.Proposal{}, noProposal(fmt.Sprintf("confidence %.2f is below %.2f", *raw.Confidence, ports.MinConfidence))
 	}
-	if err := checkDiff(raw.Diff, f.File); err != nil {
+	if raw.StartLine == nil || raw.EndLine == nil || raw.Replacement == nil {
+		return ports.Proposal{}, noProposal("invalid patch: the response does not give the lines to replace and their new text")
+	}
+	if *raw.EndLine < *raw.StartLine || *raw.StartLine < shown.First || *raw.EndLine > shown.Last {
+		return ports.Proposal{}, noProposal("invalid patch: the lines to replace are outside the lines the model was shown")
+	}
+	diff, err := buildDiff(f.File, file, *raw.StartLine, *raw.EndLine, *raw.Replacement)
+	if err != nil {
 		return ports.Proposal{}, noProposal("invalid patch: " + err.Error())
 	}
 
@@ -90,7 +108,7 @@ func ParseResponse(content string, f model.Finding) (ports.Proposal, error) {
 	if summary == "" {
 		summary = "fix " + f.RuleID
 	}
-	return ports.Proposal{Diff: raw.Diff, Summary: summary, Confidence: *raw.Confidence}, nil
+	return ports.Proposal{Diff: diff, Summary: summary, Confidence: *raw.Confidence}, nil
 }
 
 func noProposal(why string) error { return fmt.Errorf("%w: %s", ports.ErrNoProposal, why) }
@@ -123,111 +141,4 @@ func cleanSummary(s string) string {
 		out = string(r[:maxSummaryRunes])
 	}
 	return out
-}
-
-var hunkRE = regexp.MustCompile(`^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@`)
-
-// checkDiff verifies diff is a plain unified diff of exactly one file, wantFile,
-// by walking its structure with the hunk line counts. Renames, mode changes,
-// file creation or deletion and binary patches are all rejected.
-func checkDiff(diff, wantFile string) error {
-	if strings.TrimSpace(diff) == "" {
-		return errors.New("the diff is empty")
-	}
-	lines := strings.Split(strings.TrimSuffix(diff, "\n"), "\n")
-	if len(lines) > ports.MaxDiffLines {
-		return fmt.Errorf("the diff has %d lines, the limit is %d", len(lines), ports.MaxDiffLines)
-	}
-	i := 0
-
-	// Optional git preamble.
-	if strings.HasPrefix(lines[i], "diff --git ") {
-		if lines[i] != "diff --git a/"+wantFile+" b/"+wantFile {
-			return errors.New("the diff does not target the finding's file")
-		}
-		i++
-		if i < len(lines) && strings.HasPrefix(lines[i], "index ") {
-			i++
-		}
-	}
-
-	// File headers.
-	if i+1 >= len(lines) || !strings.HasPrefix(lines[i], "--- ") || !strings.HasPrefix(lines[i+1], "+++ ") {
-		return errors.New("missing file headers (an unsupported kind of change?)")
-	}
-	if headerPath(lines[i][4:]) != "a/"+wantFile || headerPath(lines[i+1][4:]) != "b/"+wantFile {
-		return errors.New("the diff does not target exactly the finding's file")
-	}
-	i += 2
-
-	hunks, changed := 0, 0
-	for i < len(lines) {
-		m := hunkRE.FindStringSubmatch(lines[i])
-		if m == nil {
-			if strings.HasPrefix(lines[i], "--- ") || strings.HasPrefix(lines[i], "diff --git ") {
-				return errors.New("the diff touches more than one file")
-			}
-			return errors.New("unexpected content after a hunk")
-		}
-		hunks++
-		oldLeft, newLeft := count(m[1]), count(m[2])
-		i++
-		for oldLeft > 0 || newLeft > 0 {
-			if i >= len(lines) {
-				return errors.New("a hunk is shorter than its header says")
-			}
-			l := lines[i]
-			switch {
-			case l == "" || l[0] == ' ': // an empty line is context whose blank was stripped
-				oldLeft--
-				newLeft--
-			case l[0] == '-':
-				oldLeft--
-				changed++
-			case l[0] == '+':
-				newLeft--
-				changed++
-			case l[0] == '\\': // "\ No newline at end of file"
-			default:
-				return errors.New("a hunk has a malformed line")
-			}
-			if oldLeft < 0 || newLeft < 0 {
-				return errors.New("a hunk is longer than its header says")
-			}
-			i++
-		}
-		for i < len(lines) && strings.HasPrefix(lines[i], "\\") {
-			i++
-		}
-	}
-	if hunks == 0 {
-		return errors.New("the diff has no hunks")
-	}
-	if changed == 0 {
-		return errors.New("the diff changes nothing")
-	}
-	return nil
-}
-
-// headerPath returns the path of a ---/+++ line, dropping a trailing tab and
-// timestamp. Quoted paths are not supported and never match.
-func headerPath(s string) string {
-	if tab := strings.IndexByte(s, '\t'); tab >= 0 {
-		s = s[:tab]
-	}
-	return strings.TrimRight(s, " ")
-}
-
-func count(s string) int {
-	if s == "" {
-		return 1 // "@@ -5 +5 @@" means one line
-	}
-	n := 0
-	for _, c := range []byte(s) {
-		n = n*10 + int(c-'0')
-		if n > 1<<20 {
-			return 1 << 20
-		}
-	}
-	return n
 }
